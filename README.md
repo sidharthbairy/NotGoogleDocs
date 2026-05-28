@@ -50,6 +50,17 @@ The app runs at `http://127.0.0.1:5173`.
 - `POST /api/documents/:id/restore`
 - `GET /api/documents/:id/diff?from=:versionId&to=:versionId`
 
+## Implemented Unit Tests For Routes:
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `GET /api/auth/me`
+- `GET /api/documents`
+- `POST /api/documents`
+- `GET /api/documents/:id`
+- `PATCH /api/documents/:id`
+- `GET /api/documents/:id/versions`
+- `POST /api/documents/:id/versions`
+
 ## Notes
 
 - Passwords are hashed with Werkzeug before storage.
@@ -58,3 +69,4 @@ The app runs at `http://127.0.0.1:5173`.
 - Documents keep an auto-saved mutable draft plus full-text saved snapshots for deterministic comparison.
 - Restoring a saved version updates the current working draft without creating a new marked version.
 - The commit summary is currently a deterministic stub that counts added and removed words. It can later be replaced by a server-side LLM call without changing the frontend contract.
+- To run unit tests, download the libraries specified within `backend/requirements.txt` and run `pytest -v`
