@@ -1,12 +1,12 @@
 import pytest
 from backend.app import create_app
-import backend.app as app_module
+import backend.database as database_module
 
 
 @pytest.fixture()
 def app(tmp_path, monkeypatch):
     test_db_path = tmp_path / "test.sqlite3"
-    monkeypatch.setattr(app_module, "DATABASE_PATH", str(test_db_path))
+    monkeypatch.setattr(database_module, "DATABASE_PATH", str(test_db_path))
 
     app = create_app()
     app.config.update({
