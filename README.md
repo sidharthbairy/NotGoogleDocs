@@ -70,3 +70,18 @@ The app runs at `http://127.0.0.1:5173`.
 - Restoring a saved version updates the current working draft without creating a new marked version.
 - The commit summary is currently a deterministic stub that counts added and removed words. It can later be replaced by a server-side LLM call without changing the frontend contract.
 - To run unit tests, download the libraries specified within `backend/requirements.txt` and run `pytest -v`
+
+## Implementing OT Engine
+
+When two users edit the same document:
+    1. Each client sends a changeset (a list of retain/insert/delete ops) based on a base revision
+    2. The server transforms the incoming edit against any edits it missed
+    3. The server applies the result to the current document text
+    4. The server stores a new row in document_revisions
+
+The `transform()` and `apply_changeset()` method is tested and available in `ot_engine/`. `submit_collab_change(...)` method in `collab_service.py` orchestrates the whole flow for the backend.
+
+## New model classes for document revisions added
+
+- New model classes were also added and their tables are inserted into the sqlite file.
+- These classes facilitates user collaboration and store document revision history in a format that allows OT to be performed on concurrent edits

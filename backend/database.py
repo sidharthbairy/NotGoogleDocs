@@ -67,6 +67,41 @@ def init_db():
         )
         """
     )
+    get_db().execute(
+        """
+        CREATE TABLE IF NOT EXISTS document_revisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            document_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            client_id TEXT NOT NULL,
+            revision_number INTEGER NOT NULL,
+            base_revision INTEGER NOT NULL,
+            change_set_json TEXT NOT NULL,
+            content_after TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            UNIQUE (document_id, revision_number),
+            FOREIGN KEY (document_id) REFERENCES documents (id),
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        """
+    )
+    ensure_column("document_revisions", "content_after", "TEXT NOT NULL DEFAULT ''")
+
+    get_db().execute(
+        """
+        CREATE TABLE IF NOT EXISTS document_collaborators (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            document_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            role TEXT NOT NULL DEFAULT 'editor',
+            created_at TEXT NOT NULL,
+            UNIQUE (document_id, user_id),
+            FOREIGN KEY (document_id) REFERENCES documents (id),
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        """
+    )
+    
     ensure_column(
         "document_versions",
         "title",
