@@ -16,11 +16,10 @@ frontend/  React + Vite app with a Google Docs-inspired editor and split diff vi
 ### Backend
 
 ```bash
-cd backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-python app.py
+pip install -r backend/requirements.txt
+python -m backend.app
 ```
 
 The API runs at `http://127.0.0.1:5001`.
@@ -49,6 +48,9 @@ The app runs at `http://127.0.0.1:5173`.
 - `POST /api/documents/:id/versions`
 - `POST /api/documents/:id/restore`
 - `GET /api/documents/:id/diff?from=:versionId&to=:versionId`
+- `GET /api/documents/:id/state`
+- `GET /api/documents/:id/revisions?since=:revisionNumber`
+- `POST /api/documents/:id/revisions`
 
 ## Implemented Unit Tests For Routes:
 - `POST /api/auth/register`
@@ -60,6 +62,9 @@ The app runs at `http://127.0.0.1:5173`.
 - `PATCH /api/documents/:id`
 - `GET /api/documents/:id/versions`
 - `POST /api/documents/:id/versions`
+- `GET /api/documents/:id/state`
+- `GET /api/documents/:id/revisions?since=:revisionNumber`
+- `POST /api/documents/:id/revisions`
 
 ## Notes
 

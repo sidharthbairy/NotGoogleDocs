@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from ot_engine.models.operation import Retain, Insert, Delete, Op
-from ot_engine.utils.constructors import changeset, delete, insert, retain
 
 from difflib import SequenceMatcher
 
@@ -70,6 +69,8 @@ def changeset_to_dict(change_set):
     }
         
 def changeset_from_dict(data):
+    from ot_engine.utils.constructors import changeset
+
     ops = []
 
     for op in data["ops"]:
@@ -88,6 +89,8 @@ def changeset_from_dict(data):
     )
 
 def text_to_changeset(old_text: str, new_text: str):
+    from ot_engine.utils.constructors import changeset, delete, insert, retain
+
     if old_text == new_text:
         if len(old_text) == 0:
             return changeset(base_length=0, ops=[])

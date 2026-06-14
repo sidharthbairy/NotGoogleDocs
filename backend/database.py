@@ -77,7 +77,7 @@ def init_db():
             revision_number INTEGER NOT NULL,
             base_revision INTEGER NOT NULL,
             change_set_json TEXT NOT NULL,
-            content_after TEXT NOT NULL
+            content_after TEXT NOT NULL,
             created_at TEXT NOT NULL,
             UNIQUE (document_id, revision_number),
             FOREIGN KEY (document_id) REFERENCES documents (id),

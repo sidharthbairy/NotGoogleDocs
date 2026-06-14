@@ -10,7 +10,6 @@ from backend.models.revision_record import (
     list_revisions_up_to,
     create_revision_record,
 )
-from backend.utils.revision_serializers import serialize_revision_row
 from ot_engine.transformation import transform
 from ot_engine.utils.apply_changeset import apply_changeset
 from ot_engine.models.change_set import changeset_to_dict, changeset_from_dict, text_to_changeset
@@ -54,7 +53,7 @@ def get_revisions_since(document_id, user_id, since_revision):
         "documentId": document_id,
         "headRevision": head_revision,
         "content": document["current_content"],
-        "revisions": [serialize_revision_row(row) for row in rows],
+        "revisions": rows,
     }
 
 def submit_collab_change(
