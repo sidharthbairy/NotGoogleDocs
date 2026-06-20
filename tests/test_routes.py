@@ -96,6 +96,7 @@ def test_save_first_version(client, auth_headers, create_document):
     assert data["version"]["versionNumber"] == 1
     assert data["version"]["content"] == "Hello world"
     assert data["version"]["commitMessage"] == "First save"
+    assert "title" not in data["version"]
     assert data["summary"] == "Initial snapshot saved."
 
 
@@ -154,6 +155,143 @@ def test_list_versions_returns_versions_newest_first(client, auth_headers, creat
     assert data["versions"][1]["versionNumber"] == 1
 
 
+def test_shared_users_have_private_marked_versions(client, auth_headers, create_document):
+    owner_headers = auth_headers("owner@example.com")
+    collaborator_headers = auth_headers("collab@example.com")
+
+    doc_response = create_document(
+        title="Shared Version Doc",
+        content="Owner draft",
+        headers=owner_headers,
+    )
+    document_id = doc_response.get_json()["document"]["id"]
+
+    owner_version_response = client.post(
+        f"/api/documents/{document_id}/versions",
+        json={
+            "content": "Owner version",
+            "commitMessage": "Owner note",
+        },
+        headers=owner_headers,
+    )
+
+    client.post(
+        f"/api/documents/{document_id}/share",
+        json={"email": "collab@example.com"},
+        headers=owner_headers,
+    )
+
+    collaborator_list_response = client.get(
+        f"/api/documents/{document_id}/versions",
+        headers=collaborator_headers,
+    )
+
+    assert collaborator_list_response.status_code == 200
+    assert collaborator_list_response.get_json()["versions"] == []
+
+    collaborator_version_response = client.post(
+        f"/api/documents/{document_id}/versions",
+        json={
+            "content": "Collaborator version",
+            "commitMessage": "Collaborator note",
+        },
+        headers=collaborator_headers,
+    )
+
+    assert collaborator_version_response.status_code == 201
+    assert collaborator_version_response.get_json()["version"]["content"] == "Collaborator version"
+
+    owner_list_response = client.get(
+        f"/api/documents/{document_id}/versions",
+        headers=owner_headers,
+    )
+    collaborator_list_response = client.get(
+        f"/api/documents/{document_id}/versions",
+        headers=collaborator_headers,
+    )
+
+    owner_versions = owner_list_response.get_json()["versions"]
+    collaborator_versions = collaborator_list_response.get_json()["versions"]
+
+    assert len(owner_versions) == 1
+    assert owner_versions[0]["id"] == owner_version_response.get_json()["version"]["id"]
+    assert owner_versions[0]["versionNumber"] == 1
+    assert len(collaborator_versions) == 1
+    assert collaborator_versions[0]["versionNumber"] == 1
+    assert collaborator_versions[0]["commitMessage"] == "Collaborator note"
+
+
+def test_collaborator_cannot_restore_owner_marked_version(client, auth_headers, create_document):
+    owner_headers = auth_headers("owner@example.com")
+    collaborator_headers = auth_headers("collab@example.com")
+
+    doc_response = create_document(headers=owner_headers)
+    document_id = doc_response.get_json()["document"]["id"]
+
+    owner_version_response = client.post(
+        f"/api/documents/{document_id}/versions",
+        json={"content": "Owner version"},
+        headers=owner_headers,
+    )
+    owner_version_id = owner_version_response.get_json()["version"]["id"]
+
+    client.post(
+        f"/api/documents/{document_id}/share",
+        json={"email": "collab@example.com"},
+        headers=owner_headers,
+    )
+
+    response = client.post(
+        f"/api/documents/{document_id}/restore",
+        json={"versionId": owner_version_id},
+        headers=collaborator_headers,
+    )
+
+    assert response.status_code == 404
+
+
+def test_restoring_version_keeps_current_document_title(client, auth_headers, create_document):
+    headers = auth_headers()
+
+    doc_response = create_document(
+        title="Original title",
+        content="First content",
+        headers=headers,
+    )
+    document_id = doc_response.get_json()["document"]["id"]
+
+    version_response = client.post(
+        f"/api/documents/{document_id}/versions",
+        json={
+            "content": "First content",
+            "commitMessage": "Before rename",
+        },
+        headers=headers,
+    )
+    version_id = version_response.get_json()["version"]["id"]
+
+    client.patch(
+        f"/api/documents/{document_id}",
+        json={
+            "title": "Renamed document",
+            "content": "Later content",
+        },
+        headers=headers,
+    )
+
+    response = client.post(
+        f"/api/documents/{document_id}/restore",
+        json={"versionId": version_id},
+        headers=headers,
+    )
+
+    data = response.get_json()
+
+    assert response.status_code == 200
+    assert data["document"]["title"] == "Renamed document"
+    assert data["document"]["content"] == "First content"
+
+
 def test_update_document_changes_title_and_content(client, auth_headers, create_document):
     headers = auth_headers()
 
@@ -201,6 +339,131 @@ def test_user_cannot_update_another_users_document(client, auth_headers, create_
     )
 
     assert response.status_code == 404
+
+
+def test_owner_can_share_document_by_email(client, auth_headers, create_document):
+    owner_headers = auth_headers("owner@example.com")
+    collaborator_headers = auth_headers("collab@example.com")
+
+    doc_response = create_document(
+        title="Shared Plan",
+        content="Draft",
+        headers=owner_headers,
+    )
+    document_id = doc_response.get_json()["document"]["id"]
+
+    share_response = client.post(
+        f"/api/documents/{document_id}/share",
+        json={"email": "collab@example.com"},
+        headers=owner_headers,
+    )
+
+    assert share_response.status_code == 201
+    assert share_response.get_json()["collaborator"]["email"] == "collab@example.com"
+
+    list_response = client.get("/api/documents", headers=collaborator_headers)
+    listed_documents = list_response.get_json()["documents"]
+
+    assert any(document["id"] == document_id for document in listed_documents)
+
+    get_response = client.get(
+        f"/api/documents/{document_id}",
+        headers=collaborator_headers,
+    )
+
+    assert get_response.status_code == 200
+    assert get_response.get_json()["document"]["title"] == "Shared Plan"
+
+
+def test_shared_user_can_submit_collab_revision(client, auth_headers, create_document):
+    owner_headers = auth_headers("owner@example.com")
+    collaborator_headers = auth_headers("collab@example.com")
+
+    doc_response = create_document(
+        title="Live Shared Doc",
+        content="abc",
+        headers=owner_headers,
+    )
+    document_id = doc_response.get_json()["document"]["id"]
+
+    client.post(
+        f"/api/documents/{document_id}/share",
+        json={"email": "collab@example.com"},
+        headers=owner_headers,
+    )
+
+    response = client.post(
+        f"/api/documents/{document_id}/revisions",
+        json={
+            "clientId": "client-b",
+            "baseRevision": 0,
+            "changeSet": {
+                "baseLength": 3,
+                "ops": [
+                    {"type": "retain", "count": 3},
+                    {"type": "insert", "text": "d"},
+                ],
+            },
+        },
+        headers=collaborator_headers,
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["content"] == "abcd"
+
+
+def test_shared_user_cannot_use_owner_draft_update(client, auth_headers, create_document):
+    owner_headers = auth_headers("owner@example.com")
+    collaborator_headers = auth_headers("collab@example.com")
+
+    doc_response = create_document(headers=owner_headers)
+    document_id = doc_response.get_json()["document"]["id"]
+
+    client.post(
+        f"/api/documents/{document_id}/share",
+        json={"email": "collab@example.com"},
+        headers=owner_headers,
+    )
+
+    response = client.patch(
+        f"/api/documents/{document_id}",
+        json={
+            "title": "Collaborator title",
+            "content": "Collaborator draft",
+        },
+        headers=collaborator_headers,
+    )
+
+    assert response.status_code == 404
+
+
+def test_non_owner_cannot_share_document(client, auth_headers, create_document):
+    owner_headers = auth_headers("owner@example.com")
+    collaborator_headers = auth_headers("collab@example.com")
+    other_headers = auth_headers("other@example.com")
+
+    doc_response = create_document(headers=owner_headers)
+    document_id = doc_response.get_json()["document"]["id"]
+
+    client.post(
+        f"/api/documents/{document_id}/share",
+        json={"email": "collab@example.com"},
+        headers=owner_headers,
+    )
+
+    response = client.post(
+        f"/api/documents/{document_id}/share",
+        json={"email": "other@example.com"},
+        headers=collaborator_headers,
+    )
+
+    assert response.status_code == 404
+
+    hidden_response = client.get(
+        f"/api/documents/{document_id}",
+        headers=other_headers,
+    )
+    assert hidden_response.status_code == 404
 
 
 def test_get_collab_state_returns_document_and_head_revision(client, auth_headers, create_document):

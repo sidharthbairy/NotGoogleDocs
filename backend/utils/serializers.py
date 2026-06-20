@@ -13,8 +13,7 @@ def serialize_version(row, include_content=True):
     version = {
         "id": row["id"],
         "documentId": row["document_id"],
-        "versionNumber": row["version_number"],
-        "title": row["title"],
+        "versionNumber": row["user_version_number"] if "user_version_number" in row.keys() else row["version_number"],
         "commitMessage": row["commit_message"],
         "summary": row["summary"],
         "createdAt": row["created_at"],

@@ -301,6 +301,12 @@ input {
   border: 1px solid #dadce0;
 }
 
+.collab-toggle.active {
+  color: #137333;
+  background: #e6f4ea;
+  border-color: #b7dfc2;
+}
+
 .spinner {
   animation: spin 1s linear infinite;
 }
@@ -350,7 +356,8 @@ input {
 .sidebar-head,
 .panel-title,
 .editor-toolbar,
-.commit-row {
+.commit-row,
+.toolbar-actions {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -463,6 +470,26 @@ small,
   margin-bottom: 18px;
 }
 
+.share-row {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  width: min(760px, 100%);
+  margin: -4px auto 18px;
+}
+
+.share-row label {
+  flex: 1;
+}
+
+.share-row input {
+  min-height: 42px;
+  padding: 0 12px;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 8px;
+}
+
 .commit-row input,
 select {
   min-height: 42px;
@@ -508,6 +535,32 @@ select {
 
 .autosave-state.saved {
   color: #137333;
+}
+
+.collab-state {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  color: #137333;
+  background: #e6f4ea;
+  border: 1px solid #b7dfc2;
+  border-radius: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.collab-state.pending,
+.collab-state.syncing {
+  color: #b06000;
+  background: #fff7e6;
+  border-color: #f5d08a;
+}
+
+.collab-state.error {
+  color: #b3261e;
+  background: #fce8e6;
+  border-color: #f2b8b5;
 }
 
 .document-editor {
@@ -739,7 +792,9 @@ select {
   }
 
   .editor-toolbar,
-  .commit-row {
+  .commit-row,
+  .toolbar-actions,
+  .share-row {
     align-items: stretch;
     flex-direction: column;
   }

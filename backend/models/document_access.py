@@ -7,7 +7,7 @@ DOCUMENT_SELECT = """
         d.current_content,
         d.created_at,
         d.updated_at,
-        COUNT(v.id) AS version_count
+        COUNT(CASE WHEN v.user_id = ? THEN v.id END) AS version_count
     FROM documents d
     LEFT JOIN document_versions v ON v.document_id = d.id
 """
@@ -37,7 +37,7 @@ def find_document_for_user(document_id, user_id):
         WHERE d.id = ?
         GROUP BY d.id
         """,
-        (document_id,),
+        (user_id, document_id),
     ).fetchone()
 
 def list_documents_for_user(user_id):
@@ -53,6 +53,26 @@ def list_documents_for_user(user_id):
         GROUP BY d.id
         ORDER BY d.updated_at DESC
         """,
-        (user_id, user_id)
+        (user_id, user_id, user_id)
     ).fetchall()
 
+
+def add_document_collaborator(document_id, user_id, created_at):
+    get_db().execute(
+        """
+        INSERT OR IGNORE INTO document_collaborators
+            (document_id, user_id, role, created_at)
+        VALUES (?, ?, 'editor', ?)
+        """,
+        (document_id, user_id, created_at),
+    )
+    get_db().commit()
+
+    return get_db().execute(
+        """
+        SELECT id, document_id, user_id, role, created_at
+        FROM document_collaborators
+        WHERE document_id = ? AND user_id = ?
+        """,
+        (document_id, user_id),
+    ).fetchone()

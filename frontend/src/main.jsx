@@ -12,10 +12,12 @@ import {
   RotateCcw,
   Save,
   Split,
+  Users,
 } from "lucide-react";
 import "./styles.css";
 
 const tokenKey = "notgoogledocs_token";
+const clientIdKey = "notgoogledocs_client_id";
 
 function App() {
   const [mode, setMode] = useState("login");
@@ -215,9 +217,19 @@ function Workspace({ token, user, onSignOut }) {
   const [diff, setDiff] = useState(null);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [autoSaveState, setAutoSaveState] = useState("idle");
+  const [collabEnabled, setCollabEnabled] = useState(false);
+  const [collabRevision, setCollabRevision] = useState(0);
+  const [collabState, setCollabState] = useState("idle");
+  const [shareEmail, setShareEmail] = useState("");
+  const [shareState, setShareState] = useState("idle");
   const [status, setStatus] = useState("loading");
   const [notice, setNotice] = useState("");
+  const [collabClientId] = useState(() => getOrCreateClientId());
   const lastSavedDraftRef = useRef({ id: null, title: "", content: "" });
+  const lastSyncedCollabRef = useRef({ id: null, content: "", revision: 0 });
+  const draftContentRef = useRef("");
+  const selectedDocumentIdRef = useRef(null);
+  const collabSubmittingRef = useRef(false);
 
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId);
   const canSaveVersion = Boolean(selectedDocumentId) && status !== "saving";
@@ -228,10 +240,41 @@ function Workspace({ token, user, onSignOut }) {
   }, []);
 
   useEffect(() => {
+    selectedDocumentIdRef.current = selectedDocumentId;
+  }, [selectedDocumentId]);
+
+  useEffect(() => {
+    draftContentRef.current = draftContent;
+  }, [draftContent]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      refreshDocuments({ silent: true });
+    }, 3000);
+
+    function handleFocus() {
+      refreshDocuments({ silent: true });
+    }
+
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [token]);
+
+  useEffect(() => {
     if (!selectedDocumentId) {
       return;
     }
 
+    setCollabEnabled(false);
+    setCollabRevision(0);
+    setCollabState("idle");
+    setShareEmail("");
+    setShareState("idle");
+    lastSyncedCollabRef.current = { id: null, content: "", revision: 0 };
     loadDocument(selectedDocumentId);
     loadVersions(selectedDocumentId);
   }, [selectedDocumentId]);
@@ -259,7 +302,7 @@ function Workspace({ token, user, onSignOut }) {
   }, [fromVersionId, isCompareOpen, selectedDocumentId, toVersionId, token]);
 
   useEffect(() => {
-    if (!selectedDocumentId) {
+    if (!selectedDocumentId || collabEnabled) {
       return;
     }
 
@@ -302,20 +345,57 @@ function Workspace({ token, user, onSignOut }) {
     }, 900);
 
     return () => window.clearTimeout(timeoutId);
-  }, [draftContent, draftTitle, selectedDocumentId, token]);
+  }, [collabEnabled, draftContent, draftTitle, selectedDocumentId, token]);
 
-  async function refreshDocuments() {
-    setStatus("loading");
+  useEffect(() => {
+    if (!collabEnabled || !selectedDocumentId) {
+      return;
+    }
+
+    const lastSynced = lastSyncedCollabRef.current;
+    if (lastSynced.id !== selectedDocumentId || draftContent === lastSynced.content) {
+      return;
+    }
+
+    setCollabState("pending");
+    const timeoutId = window.setTimeout(() => {
+      submitCollabDraft(draftContent);
+    }, 900);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [collabEnabled, collabState, draftContent, selectedDocumentId, token]);
+
+  useEffect(() => {
+    if (!collabEnabled || !selectedDocumentId) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      pollCollabRevisions();
+    }, 2000);
+
+    return () => window.clearInterval(intervalId);
+  }, [collabEnabled, selectedDocumentId, token]);
+
+  async function refreshDocuments(options = {}) {
+    if (!options.silent) {
+      setStatus("loading");
+    }
+
     try {
       const data = await api("/api/documents", { token });
       setDocuments(data.documents);
-      if (!selectedDocumentId && data.documents.length) {
+      if (!selectedDocumentIdRef.current && data.documents.length) {
         setSelectedDocumentId(data.documents[0].id);
       }
     } catch (error) {
-      setNotice(error.message);
+      if (!options.silent) {
+        setNotice(error.message);
+      }
     } finally {
-      setStatus("idle");
+      if (!options.silent) {
+        setStatus("idle");
+      }
     }
   }
 
@@ -391,14 +471,6 @@ function Workspace({ token, user, onSignOut }) {
     setStatus("saving");
     setNotice("");
     try {
-      const updated = await api(`/api/documents/${selectedDocumentId}`, {
-        method: "PATCH",
-        token,
-        body: {
-          title: draftTitle,
-          content: draftContent,
-        },
-      });
       const saved = await api(`/api/documents/${selectedDocumentId}/versions`, {
         method: "POST",
         token,
@@ -408,12 +480,19 @@ function Workspace({ token, user, onSignOut }) {
         },
       });
       setDocuments((current) =>
-        current.map((document) => (document.id === selectedDocumentId ? updated.document : document)),
+        current.map((document) =>
+          document.id === selectedDocumentId
+            ? {
+                ...document,
+                content: draftContent,
+              }
+            : document,
+        ),
       );
       lastSavedDraftRef.current = {
         id: selectedDocumentId,
-        title: updated.document.title,
-        content: updated.document.content,
+        title: draftTitle,
+        content: draftContent,
       };
       setAutoSaveState("saved");
       setCommitMessage("");
@@ -459,6 +538,158 @@ function Workspace({ token, user, onSignOut }) {
       setNotice(error.message);
     } finally {
       setStatus("idle");
+    }
+  }
+
+  async function handleToggleCollaboration() {
+    if (!selectedDocumentId) {
+      return;
+    }
+
+    if (collabEnabled) {
+      setCollabEnabled(false);
+      setCollabState("idle");
+      setNotice("Collaboration mode paused.");
+      return;
+    }
+
+    setCollabState("syncing");
+    setNotice("");
+
+    try {
+      const state = await api(`/api/documents/${selectedDocumentId}/state`, { token });
+
+      setDraftTitle(state.title);
+      setDraftContent(state.content);
+      lastSavedDraftRef.current = {
+        id: selectedDocumentId,
+        title: state.title,
+        content: state.content,
+      };
+      lastSyncedCollabRef.current = {
+        id: selectedDocumentId,
+        content: state.content,
+        revision: state.headRevision,
+      };
+      setCollabRevision(state.headRevision);
+      setAutoSaveState("saved");
+      setCollabEnabled(true);
+      setCollabState("live");
+      setNotice("Collaboration mode is live.");
+    } catch (error) {
+      setCollabState("error");
+      setNotice(error.message);
+    }
+  }
+
+  async function handleShareDocument(event) {
+    event.preventDefault();
+    if (!selectedDocumentId || !shareEmail.trim()) {
+      return;
+    }
+
+    setShareState("sharing");
+    setNotice("");
+
+    try {
+      const data = await api(`/api/documents/${selectedDocumentId}/share`, {
+        method: "POST",
+        token,
+        body: {
+          email: shareEmail,
+        },
+      });
+      setShareEmail("");
+      setShareState("idle");
+      setNotice(`Shared with ${data.collaborator.email}.`);
+    } catch (error) {
+      setShareState("error");
+      setNotice(error.message);
+    }
+  }
+
+  async function submitCollabDraft(nextContent) {
+    if (!selectedDocumentId || collabSubmittingRef.current) {
+      return;
+    }
+
+    const lastSynced = lastSyncedCollabRef.current;
+    if (lastSynced.id !== selectedDocumentId || nextContent === lastSynced.content) {
+      return;
+    }
+
+    const changeSet = buildChangeSet(lastSynced.content, nextContent);
+    collabSubmittingRef.current = true;
+    setCollabState("syncing");
+
+    try {
+      const data = await api(`/api/documents/${selectedDocumentId}/revisions`, {
+        method: "POST",
+        token,
+        body: {
+          clientId: collabClientId,
+          baseRevision: lastSynced.revision,
+          changeSet,
+        },
+      });
+
+      lastSyncedCollabRef.current = {
+        id: selectedDocumentId,
+        content: data.content,
+        revision: data.headRevision,
+      };
+      setCollabRevision(data.headRevision);
+
+      if (draftContentRef.current === nextContent) {
+        setDraftContent(data.content);
+        setCollabState("live");
+      } else {
+        setCollabState("pending");
+      }
+    } catch (error) {
+      setCollabState("error");
+      setNotice(error.message);
+    } finally {
+      collabSubmittingRef.current = false;
+    }
+  }
+
+  async function pollCollabRevisions() {
+    if (!selectedDocumentId || collabSubmittingRef.current) {
+      return;
+    }
+
+    const lastSynced = lastSyncedCollabRef.current;
+    if (lastSynced.id !== selectedDocumentId) {
+      return;
+    }
+
+    try {
+      const data = await api(
+        `/api/documents/${selectedDocumentId}/revisions?since=${lastSynced.revision}`,
+        { token },
+      );
+
+      if (!data.revisions.length) {
+        return;
+      }
+
+      const latest = data.revisions[data.revisions.length - 1];
+      if (draftContentRef.current !== lastSynced.content) {
+        return;
+      }
+
+      lastSyncedCollabRef.current = {
+        id: selectedDocumentId,
+        content: latest.contentAfter,
+        revision: data.headRevision,
+      };
+      setDraftContent(latest.contentAfter);
+      setCollabRevision(data.headRevision);
+      setCollabState("live");
+    } catch (error) {
+      setCollabState("error");
+      setNotice(error.message);
     }
   }
 
@@ -539,20 +770,35 @@ function Workspace({ token, user, onSignOut }) {
                   onChange={(event) => setDraftTitle(event.target.value)}
                   value={draftTitle}
                 />
-                <button
-                  className="primary-action"
-                  data-testid="save-version"
-                  disabled={!canSaveVersion}
-                  onClick={handleSaveVersion}
-                  type="button"
-                >
-                  {status === "saving" ? (
-                    <RefreshCcw className="spinner" size={18} aria-hidden="true" />
-                  ) : (
-                    <Save size={18} aria-hidden="true" />
-                  )}
-                  Save version
-                </button>
+                <div className="toolbar-actions">
+                  <button
+                    className={collabEnabled ? "secondary-action collab-toggle active" : "secondary-action collab-toggle"}
+                    disabled={!selectedDocumentId || collabState === "syncing"}
+                    onClick={handleToggleCollaboration}
+                    type="button"
+                  >
+                    {collabState === "syncing" ? (
+                      <RefreshCcw className="spinner" size={18} aria-hidden="true" />
+                    ) : (
+                      <Users size={18} aria-hidden="true" />
+                    )}
+                    {collabEnabled ? "Live editing" : "Collaboration"}
+                  </button>
+                  <button
+                    className="primary-action"
+                    data-testid="save-version"
+                    disabled={!canSaveVersion}
+                    onClick={handleSaveVersion}
+                    type="button"
+                  >
+                    {status === "saving" ? (
+                      <RefreshCcw className="spinner" size={18} aria-hidden="true" />
+                    ) : (
+                      <Save size={18} aria-hidden="true" />
+                    )}
+                    Save version
+                  </button>
+                </div>
               </div>
 
               <div className="commit-row">
@@ -563,8 +809,40 @@ function Workspace({ token, user, onSignOut }) {
                   value={commitMessage}
                 />
                 <span className={`autosave-state ${autoSaveState}`}>{formatAutoSaveState(autoSaveState)}</span>
+                {collabEnabled ? (
+                  <span className={`collab-state ${collabState}`}>
+                    Rev {collabRevision} · {formatCollabState(collabState)}
+                  </span>
+                ) : null}
                 {notice ? <span className="notice">{notice}</span> : null}
               </div>
+
+              {collabEnabled ? (
+                <form className="share-row" onSubmit={handleShareDocument}>
+                  <label>
+                    <span>Share for live editing</span>
+                    <input
+                      aria-label="Collaborator email"
+                      onChange={(event) => setShareEmail(event.target.value)}
+                      placeholder="collaborator@example.com"
+                      type="email"
+                      value={shareEmail}
+                    />
+                  </label>
+                  <button
+                    className="secondary-action"
+                    disabled={!shareEmail.trim() || shareState === "sharing"}
+                    type="submit"
+                  >
+                    {shareState === "sharing" ? (
+                      <RefreshCcw className="spinner" size={18} aria-hidden="true" />
+                    ) : (
+                      <Users size={18} aria-hidden="true" />
+                    )}
+                    Share
+                  </button>
+                </form>
+              ) : null}
 
               <textarea
                 aria-label="Document content"
@@ -748,6 +1026,72 @@ function formatAutoSaveState(state) {
     return "Draft saved";
   }
   return "";
+}
+
+function formatCollabState(state) {
+  if (state === "syncing") {
+    return "Syncing";
+  }
+  if (state === "pending") {
+    return "Local edit pending";
+  }
+  if (state === "error") {
+    return "Sync issue";
+  }
+  return "Live";
+}
+
+function getOrCreateClientId() {
+  const existing = sessionStorage.getItem(clientIdKey);
+  if (existing) {
+    return existing;
+  }
+
+  const next = `client-${Math.random().toString(36).slice(2, 10)}`;
+  sessionStorage.setItem(clientIdKey, next);
+  return next;
+}
+
+function buildChangeSet(oldText, newText) {
+  let prefixLength = 0;
+  while (
+    prefixLength < oldText.length &&
+    prefixLength < newText.length &&
+    oldText[prefixLength] === newText[prefixLength]
+  ) {
+    prefixLength += 1;
+  }
+
+  let suffixLength = 0;
+  while (
+    suffixLength + prefixLength < oldText.length &&
+    suffixLength + prefixLength < newText.length &&
+    oldText[oldText.length - 1 - suffixLength] === newText[newText.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1;
+  }
+
+  const deleteCount = oldText.length - prefixLength - suffixLength;
+  const insertText = newText.slice(prefixLength, newText.length - suffixLength);
+  const ops = [];
+
+  if (prefixLength > 0) {
+    ops.push({ type: "retain", count: prefixLength });
+  }
+  if (deleteCount > 0) {
+    ops.push({ type: "delete", count: deleteCount });
+  }
+  if (insertText) {
+    ops.push({ type: "insert", text: insertText });
+  }
+  if (suffixLength > 0) {
+    ops.push({ type: "retain", count: suffixLength });
+  }
+
+  return {
+    baseLength: oldText.length,
+    ops,
+  };
 }
 
 async function api(path, options = {}) {

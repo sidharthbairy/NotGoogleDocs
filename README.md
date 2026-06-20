@@ -16,8 +16,8 @@ frontend/  React + Vite app with a Google Docs-inspired editor and split diff vi
 ### Backend
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv backend/.venv
+source backend/.venv/bin/activate
 pip install -r backend/requirements.txt
 python -m backend.app
 ```
@@ -47,6 +47,7 @@ The app runs at `http://127.0.0.1:5173`.
 - `GET /api/documents/:id/versions`
 - `POST /api/documents/:id/versions`
 - `POST /api/documents/:id/restore`
+- `POST /api/documents/:id/share`
 - `GET /api/documents/:id/diff?from=:versionId&to=:versionId`
 - `GET /api/documents/:id/state`
 - `GET /api/documents/:id/revisions?since=:revisionNumber`
@@ -62,6 +63,7 @@ The app runs at `http://127.0.0.1:5173`.
 - `PATCH /api/documents/:id`
 - `GET /api/documents/:id/versions`
 - `POST /api/documents/:id/versions`
+- `POST /api/documents/:id/share`
 - `GET /api/documents/:id/state`
 - `GET /api/documents/:id/revisions?since=:revisionNumber`
 - `POST /api/documents/:id/revisions`
@@ -72,7 +74,9 @@ The app runs at `http://127.0.0.1:5173`.
 - Auth tokens are signed with Flask's `SECRET_KEY` via `itsdangerous`.
 - SQLite is used for the proof of concept and stored in `backend/notgoogledocs.sqlite3` by default.
 - Documents keep an auto-saved mutable draft plus full-text saved snapshots for deterministic comparison.
+- Saved versions are private to the user who marks them, even on shared documents.
 - Restoring a saved version updates the current working draft without creating a new marked version.
+- Restoring a saved version changes the document content only; the document title stays unchanged.
 - The commit summary is currently a deterministic stub that counts added and removed words. It can later be replaced by a server-side LLM call without changing the frontend contract.
 - To run unit tests, download the libraries specified within `backend/requirements.txt` and run `pytest -v`
 

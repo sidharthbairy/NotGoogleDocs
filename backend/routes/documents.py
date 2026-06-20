@@ -58,6 +58,9 @@ def update_document(document_id):
         title,
         content,
     )
+    if updated_document is None:
+        return jsonify({"error": "Document not found."}), 404
+
     return jsonify({"document": serialize_document(updated_document)})
 
 
@@ -88,6 +91,9 @@ def save_version(document_id):
         content,
         payload.get("commitMessage"),
     )
+    if version is None:
+        return jsonify({"error": "Document not found."}), 404
+
     return jsonify({"version": serialize_version(version), "summary": summary}), 201
 
 
@@ -117,6 +123,26 @@ def restore_version(document_id):
             "restoredVersion": serialize_version(version),
         }
     )
+
+
+@documents_bp.post("/<int:document_id>/share")
+@require_auth
+def share_document(document_id):
+    payload = request.get_json(silent=True) or {}
+    collaborator, error = document_service.share_document(
+        document_id,
+        request.current_user["id"],
+        payload.get("email"),
+    )
+
+    if error == "Document not found.":
+        return jsonify({"error": error}), 404
+    if error == "User not found.":
+        return jsonify({"error": error}), 404
+    if error:
+        return jsonify({"error": error}), 400
+
+    return jsonify({"collaborator": collaborator}), 201
 
 
 @documents_bp.get("/<int:document_id>/diff")

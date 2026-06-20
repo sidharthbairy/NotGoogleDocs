@@ -66,49 +66,88 @@ def update_document(document_id, owner_id, title, content, updated_at):
     return find_document(document_id, owner_id)
 
 
-def restore_document(document_id, owner_id, title, content, updated_at):
+def restore_document_content(document_id, content, updated_at):
     get_db().execute(
         """
         UPDATE documents
-        SET title = ?, current_content = ?, updated_at = ?
-        WHERE id = ? AND owner_id = ?
+        SET current_content = ?, updated_at = ?
+        WHERE id = ?
         """,
-        (title, content, updated_at, document_id, owner_id),
+        (content, updated_at, document_id),
     )
     get_db().commit()
-    return find_document(document_id, owner_id)
 
 
-def list_versions(document_id):
+def list_versions(document_id, user_id):
     return get_db().execute(
-        f"""
-        {VERSION_SELECT}
-        WHERE document_id = ?
+        """
+        SELECT *
+        FROM (
+            SELECT
+                id,
+                document_id,
+                version_number,
+                title,
+                content,
+                commit_message,
+                summary,
+                created_at,
+                ROW_NUMBER() OVER (ORDER BY version_number ASC) AS user_version_number
+            FROM document_versions
+            WHERE document_id = ? AND user_id = ?
+        )
         ORDER BY version_number DESC
         """,
-        (document_id,),
+        (document_id, user_id),
     ).fetchall()
 
 
-def get_latest_version(document_id):
+def get_latest_version(document_id, user_id):
     return get_db().execute(
         f"""
         {VERSION_SELECT}
-        WHERE document_id = ?
+        WHERE document_id = ? AND user_id = ?
         ORDER BY version_number DESC
         LIMIT 1
+        """,
+        (document_id, user_id),
+    ).fetchone()
+
+
+def get_latest_document_version_number(document_id):
+    row = get_db().execute(
+        """
+        SELECT COALESCE(MAX(version_number), 0) AS latest_version
+        FROM document_versions
+        WHERE document_id = ?
         """,
         (document_id,),
     ).fetchone()
 
+    return row["latest_version"]
 
-def get_version(version_id, document_id):
+
+def get_version(version_id, document_id, user_id):
     return get_db().execute(
-        f"""
-        {VERSION_SELECT}
-        WHERE id = ? AND document_id = ?
+        """
+        SELECT *
+        FROM (
+            SELECT
+                id,
+                document_id,
+                version_number,
+                title,
+                content,
+                commit_message,
+                summary,
+                created_at,
+                ROW_NUMBER() OVER (ORDER BY version_number ASC) AS user_version_number
+            FROM document_versions
+            WHERE document_id = ? AND user_id = ?
+        )
+        WHERE id = ?
         """,
-        (version_id, document_id),
+        (document_id, user_id, version_id),
     ).fetchone()
 
 
@@ -143,9 +182,9 @@ def create_version(
         """
         UPDATE documents
         SET current_content = ?, updated_at = ?
-        WHERE id = ? AND owner_id = ?
+        WHERE id = ?
         """,
-        (content, created_at, document_id, user_id),
+        (content, created_at, document_id),
     )
     get_db().commit()
-    return get_version(cursor.lastrowid, document_id)
+    return get_version(cursor.lastrowid, document_id, user_id)
