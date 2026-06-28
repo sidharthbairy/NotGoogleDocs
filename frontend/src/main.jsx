@@ -1094,13 +1094,15 @@ function buildChangeSet(oldText, newText) {
   };
 }
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+
 async function api(path, options = {}) {
   const headers = {
     "Content-Type": "application/json",
     ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
   };
 
-  const response = await fetch(path, {
+  const response = await fetch(`${API_BASE}${path}`, {
     method: options.method || "GET",
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
