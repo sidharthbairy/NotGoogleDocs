@@ -1,6 +1,7 @@
 from backend.models import document as document_model
 from backend.models import document_access
 from backend.models import user as user_model
+from backend.services import ai_summary_service
 from backend.services import diff_service
 from backend.utils.text import clean_optional_text, clean_title
 from backend.utils.time import utc_now
@@ -81,7 +82,8 @@ def restore_version(document_id, owner_id, version_id):
 
 
 def compare_versions(document_id, owner_id, from_version_id, to_version_id):
-    if document_access.find_document_for_user(document_id, owner_id) is None:
+    document = document_access.find_document_for_user(document_id, owner_id)
+    if document is None:
         return None, "Document not found."
 
     from_version = document_model.get_version(from_version_id, document_id, owner_id)
@@ -90,11 +92,19 @@ def compare_versions(document_id, owner_id, from_version_id, to_version_id):
         return None, "One or both versions were not found."
 
     chunks = diff_service.build_diff(from_version["content"], to_version["content"])
+    fallback_summary = diff_service.generate_stub_summary(chunks, False)
+
     return {
         "from": from_version,
         "to": to_version,
         "chunks": chunks,
-        "summary": diff_service.generate_stub_summary(chunks, False),
+        "summary": ai_summary_service.generate_diff_summary(
+            chunks,
+            fallback_summary,
+            document_title=document["title"],
+            from_note=from_version["commit_message"],
+            to_note=to_version["commit_message"],
+        ),
     }, None
 
 

@@ -1,0 +1,90 @@
+[
+  {
+    "id": "add-authentication-details",
+    "title": "Technical Design",
+    "fromNote": "",
+    "toNote": "Document authentication",
+    "oldText": "The backend exposes document routes through Flask.",
+    "newText": "The backend exposes document routes through Flask. Authentication uses email and password login, with signed tokens protecting private routes.",
+    "referenceSummary": "Added email-and-password authentication and signed-token protection for private backend routes.",
+    "requiredTermGroups": [["authentication", "login"], ["token", "private"]],
+    "forbiddenTerms": ["word count", "AI"]
+  },
+  {
+    "id": "remove-unused-export",
+    "title": "Milestone Scope",
+    "fromNote": "Initial feature list",
+    "toNote": "Remove deferred feature",
+    "oldText": "Users can create documents, save versions, compare changes, and export documents as PDF.",
+    "newText": "Users can create documents, save versions, and compare changes.",
+    "referenceSummary": "Removed PDF export from the milestone scope.",
+    "requiredTermGroups": [["PDF"], ["removed", "scope", "deferred"]],
+    "forbiddenTerms": ["added PDF"]
+  },
+  {
+    "id": "clarify-real-time-collaboration",
+    "title": "Collaboration Design",
+    "fromNote": "Early collaboration description",
+    "toNote": "Clarify simultaneous editing",
+    "oldText": "Collaborators can open a shared document and submit their edits to the server.",
+    "newText": "Collaborators can edit the same shared document simultaneously, while Operational Transformation resolves concurrent operations before the server broadcasts them.",
+    "referenceSummary": "Clarified that collaborators edit simultaneously and that Operational Transformation resolves concurrent changes before broadcast.",
+    "requiredTermGroups": [["simultaneously", "real-time"], ["Operational Transformation", "OT"], ["concurrent"]],
+    "forbiddenTerms": ["last-write-wins"]
+  },
+  {
+    "id": "wording-only-change",
+    "title": "Problem Motivation",
+    "fromNote": "",
+    "toNote": "Improve wording",
+    "oldText": "Real-time editors can make revision history difficult to understand.",
+    "newText": "Real-time editors can make document revision history harder to follow.",
+    "referenceSummary": "Reworded the problem statement without changing its meaning.",
+    "requiredTermGroups": [["reworded", "wording", "phrasing"], ["meaning", "clarity", "problem statement"]],
+    "forbiddenTerms": ["added a feature", "removed revision history"]
+  },
+  {
+    "id": "delete-repeated-sentence",
+    "title": "User Guide",
+    "fromNote": "",
+    "toNote": "Remove repetition",
+    "oldText": "Select two saved versions to compare them. The comparison highlights inserted and deleted text. Select two saved versions to compare them.",
+    "newText": "Select two saved versions to compare them. The comparison highlights inserted and deleted text.",
+    "referenceSummary": "Removed a repeated instruction about selecting versions for comparison.",
+    "requiredTermGroups": [["removed", "deleted"], ["repeated", "duplicate"], ["compare", "comparison", "versions"]],
+    "forbiddenTerms": ["removed the comparison feature"]
+  },
+  {
+    "id": "multiple-related-edits",
+    "title": "Version Control Flow",
+    "fromNote": "Basic snapshot flow",
+    "toNote": "Complete restore workflow",
+    "oldText": "A user can save a named version. Versions appear in chronological order. The editor always shows the latest saved version.",
+    "newText": "A user can save a named version with an optional note. Versions appear newest first. Restoring a version replaces the working document content without changing its title.",
+    "referenceSummary": "Expanded version management with optional notes, newest-first ordering, and content-only restoration.",
+    "requiredTermGroups": [["note"], ["newest", "ordering"], ["restore", "restoration"], ["title", "content"]],
+    "forbiddenTerms": ["renamed the document"]
+  },
+  {
+    "id": "title-provides-subject",
+    "title": "Database Migration Plan",
+    "fromNote": "",
+    "toNote": "Choose production storage",
+    "oldText": "The proof of concept uses SQLite. The production option is undecided.",
+    "newText": "The proof of concept uses SQLite. Production metadata will use PostgreSQL, while document files may be stored in S3.",
+    "referenceSummary": "Specified PostgreSQL for production metadata and S3 as a possible document-storage service.",
+    "requiredTermGroups": [["PostgreSQL"], ["S3"], ["production", "metadata", "storage"]],
+    "forbiddenTerms": ["replaced SQLite in the proof of concept"]
+  },
+  {
+    "id": "punctuation-only-change",
+    "title": "Project Introduction",
+    "fromNote": "",
+    "toNote": "Fix punctuation",
+    "oldText": "NotGoogleDocs is a collaborative editor it provides explicit version snapshots.",
+    "newText": "NotGoogleDocs is a collaborative editor; it provides explicit version snapshots.",
+    "referenceSummary": "Corrected punctuation without changing the document's meaning.",
+    "requiredTermGroups": [["punctuation", "semicolon"], ["meaning", "wording"]],
+    "forbiddenTerms": ["added version snapshots"]
+  }
+]

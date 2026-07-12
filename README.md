@@ -24,6 +24,15 @@ python -m backend.app
 
 The API runs at `http://127.0.0.1:5001`.
 
+For AI-generated split diff summaries, create `backend/.env` and add:
+
+```bash
+OPENAI_API_KEY=your-api-key-here
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+Restart the backend after changing `.env`.
+
 ### Frontend
 
 ```bash
@@ -77,8 +86,10 @@ The app runs at `http://127.0.0.1:5173`.
 - Saved versions are private to the user who marks them, even on shared documents.
 - Restoring a saved version updates the current working draft without creating a new marked version.
 - Restoring a saved version changes the document content only; the document title stays unchanged.
-- The commit summary is currently a deterministic stub that counts added and removed words. It can later be replaced by a server-side LLM call without changing the frontend contract.
+- Split diff summaries use a server-side OpenAI call when `OPENAI_API_KEY` is configured, and fall back to the deterministic stub when it is not.
 - To run unit tests, download the libraries specified within `backend/requirements.txt` and run `pytest -v`
+- To inspect the AI summary evaluation cases without using API quota, run `python scripts/evaluate_ai_summaries.py --dry-run`
+- To evaluate the current model against every case, run `python scripts/evaluate_ai_summaries.py`
 
 ## Implementing OT Engine
 
