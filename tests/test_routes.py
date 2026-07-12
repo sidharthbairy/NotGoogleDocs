@@ -1,5 +1,6 @@
 from backend.database import get_db
 from backend.models.revision_record import create_revision_record
+from backend.services import ai_summary_service
 
 
 def test_login(client, register_user):
@@ -153,6 +154,46 @@ def test_list_versions_returns_versions_newest_first(client, auth_headers, creat
     assert len(data["versions"]) == 2
     assert data["versions"][0]["versionNumber"] == 2
     assert data["versions"][1]["versionNumber"] == 1
+
+
+def test_compare_versions_uses_ai_summary(client, auth_headers, create_document, monkeypatch):
+    headers = auth_headers()
+
+    doc_response = create_document(headers=headers)
+    document_id = doc_response.get_json()["document"]["id"]
+
+    first = client.post(
+        f"/api/documents/{document_id}/versions",
+        json={"content": "First draft", "commitMessage": "Initial scope"},
+        headers=headers,
+    ).get_json()["version"]
+    second = client.post(
+        f"/api/documents/{document_id}/versions",
+        json={
+            "content": "First draft with clearer scope",
+            "commitMessage": "Clarify scope",
+        },
+        headers=headers,
+    ).get_json()["version"]
+
+    captured = {}
+
+    def fake_summary(_chunks, _fallback, **context):
+        captured.update(context)
+        return "Clarified the document scope."
+
+    monkeypatch.setattr(ai_summary_service, "generate_diff_summary", fake_summary)
+
+    response = client.get(
+        f"/api/documents/{document_id}/diff?from={first['id']}&to={second['id']}",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["summary"] == "Clarified the document scope."
+    assert captured["document_title"] == "Test Document"
+    assert captured["from_note"] == "Initial scope"
+    assert captured["to_note"] == "Clarify scope"
 
 
 def test_shared_users_have_private_marked_versions(client, auth_headers, create_document):
