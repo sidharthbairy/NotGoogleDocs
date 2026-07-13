@@ -7,6 +7,7 @@ from backend.services.collab_service import (
     get_revisions_since,
     submit_collab_change,
 )
+from backend.sockets.collab_socket import broadcast_revision
 from backend.utils.revision_serializers import (
     serialize_document_state,
     serialize_revisions_since,
@@ -81,4 +82,12 @@ def submit_revision(document_id):
     except (KeyError, TypeError, ValueError):
         return jsonify({"error": "Invalid changeSet."}), 400
 
-    return jsonify(serialize_submit_collab_result(result)), 201
+    payload = serialize_submit_collab_result(result)
+
+    broadcast_revision(
+        document_id,
+        result["revision"],
+        result["revisionNumber"]
+    )
+
+    return jsonify(payload), 201

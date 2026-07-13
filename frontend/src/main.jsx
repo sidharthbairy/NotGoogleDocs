@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import "./styles.css";
+import { createCollabSocket } from "./collabSocket";
 
 const tokenKey = "notgoogledocs_token";
 const clientIdKey = "notgoogledocs_client_id";
@@ -230,6 +231,9 @@ function Workspace({ token, user, onSignOut }) {
   const draftContentRef = useRef("");
   const selectedDocumentIdRef = useRef(null);
   const collabSubmittingRef = useRef(false);
+  const collabSocketRef = useRef(null);
+  const pendingCollabSubmitRef = useRef(null);
+  const collabAckTimeoutRef = useRef(null);
 
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId);
   const canSaveVersion = Boolean(selectedDocumentId) && status !== "saving";
@@ -360,22 +364,148 @@ function Workspace({ token, user, onSignOut }) {
     setCollabState("pending");
     const timeoutId = window.setTimeout(() => {
       submitCollabDraft(draftContent);
-    }, 900);
+    }, 200);
 
     return () => window.clearTimeout(timeoutId);
   }, [collabEnabled, collabState, draftContent, selectedDocumentId, token]);
+
+  // 2s interval of collab updates deleted
+  // useEffect(() => {
+  //   if (!collabEnabled || !selectedDocumentId) {
+  //     return;
+  //   }
+
+  //   const intervalId = window.setInterval(() => {
+  //     pollCollabRevisions();
+  //   }, 2000);
+
+  //   return () => window.clearInterval(intervalId);
+  // }, [collabEnabled, selectedDocumentId, token]);
+
+  function clearCollabAckTimeout() {
+    if (collabAckTimeoutRef.current) {
+      window.clearTimeout(collabAckTimeoutRef.current);
+      collabAckTimeoutRef.current = null;
+    }
+  }
+
+  function handleCollabAck(data) {
+    clearCollabAckTimeout();
+    const pendingContent = pendingCollabSubmitRef.current;
+    pendingCollabSubmitRef.current = null;
+
+    lastSyncedCollabRef.current = {
+      id: selectedDocumentId,
+      content: data.content,
+      revision: data.headRevision,
+    };
+    setCollabRevision(data.headRevision);
+
+    if (pendingContent === null || draftContentRef.current === pendingContent) {
+      setDraftContent(data.content);
+      setCollabState("live");
+    } else {
+      setCollabState("pending");
+    }
+
+    collabSubmittingRef.current = false;
+  }
+
+  function handleCollabSubmitError(error) {
+    clearCollabAckTimeout();
+    pendingCollabSubmitRef.current = null;
+    collabSubmittingRef.current = false;
+    setCollabState("error");
+    setNotice(error.message);
+  }
 
   useEffect(() => {
     if (!collabEnabled || !selectedDocumentId) {
       return;
     }
 
-    const intervalId = window.setInterval(() => {
-      pollCollabRevisions();
-    }, 2000);
+    const socket = createCollabSocket(token);
+    collabSocketRef.current = socket;
 
-    return () => window.clearInterval(intervalId);
-  }, [collabEnabled, selectedDocumentId, token]);
+    socket.on("connect", () => {
+      socket.emit("join_document", { documentId: selectedDocumentId });
+    });
+
+    socket.on("revision_ack", handleCollabAck);
+
+    socket.on("submit_error", handleCollabSubmitError);
+
+    socket.on("revision_applied", (data) => {
+      if (data.documentId !== selectedDocumentId) return;
+
+      const lastSynced = lastSyncedCollabRef.current;
+      const incoming = data.revision;
+
+      if (incoming.clientId === collabClientId) return;
+
+      if (draftContentRef.current !== lastSynced.content) return;
+
+      lastSyncedCollabRef.current = {
+        id: selectedDocumentId,
+        content: incoming.contentAfter,
+        revision: data.headRevision,
+      };
+
+      setDraftContent(incoming.contentAfter);
+      setCollabRevision(data.headRevision);
+      setCollabState("live");
+    });
+
+    socket.on("disconnect", async () => {
+      await resyncCollabRevisions();
+    });
+
+    return () => {
+      clearCollabAckTimeout();
+      socket.off("revision_ack", handleCollabAck);
+      socket.off("submit_error", handleCollabSubmitError);
+      socket.emit("leave_document", { document_id: selectedDocumentId });
+      socket.disconnect();
+      collabSocketRef.current = null;
+    };
+  }, [collabEnabled, selectedDocumentId, token, collabClientId]);
+
+  async function resyncCollabRevisions() {
+    if (!selectedDocumentId || collabSubmittingRef.current) {
+      return;
+    }
+
+    const lastSynced = lastSyncedCollabRef.current;
+
+    if (lastSynced.id !== selectedDocumentId) {
+      return;
+    }
+
+    try {
+      const data = await api(
+        `/api/documents/${selectedDocumentId}/revisions?since=${lastSynced.revision}`,
+        { token }
+      );
+
+      if (!data.revisions.length) return;
+
+      const latest = data.revisions[data.revisions.length - 1];
+      if (draftContentRef.current !== lastSynced.content) return;
+
+      lastSyncedCollabRef.current = {
+        id: selectedDocumentId,
+        content: latest.contentAfter,
+        revision: data.headRevision,
+      };
+
+      setDraftContent(latest.contentAfter);
+      setCollabRevision(data.headRevision);
+      setCollabState("live");
+    } catch (error) {
+      setCollabState("error");
+      setNotice(error.message);
+    }
+  }
 
   async function refreshDocuments(options = {}) {
     if (!options.silent) {
@@ -608,6 +738,26 @@ function Workspace({ token, user, onSignOut }) {
     }
   }
 
+  async function submitCollabDraftViaHttp(nextContent) {
+    const lastSynced = lastSyncedCollabRef.current;
+
+    try {
+      const data = await api(`/api/documents/${selectedDocumentId}/revisions`, {
+        method: "POST",
+        token,
+        body: {
+          clientId: collabClientId,
+          baseRevision: lastSynced.revision,
+          changeSet: buildChangeSet(lastSynced.content, nextContent),
+        },
+      });
+
+      handleCollabAck(data);
+    } catch (error) {
+      handleCollabSubmitError(error);
+    }
+  }
+
   async function submitCollabDraft(nextContent) {
     if (!selectedDocumentId || collabSubmittingRef.current) {
       return;
@@ -620,78 +770,74 @@ function Workspace({ token, user, onSignOut }) {
 
     const changeSet = buildChangeSet(lastSynced.content, nextContent);
     collabSubmittingRef.current = true;
+    pendingCollabSubmitRef.current = nextContent;
     setCollabState("syncing");
 
-    try {
-      const data = await api(`/api/documents/${selectedDocumentId}/revisions`, {
-        method: "POST",
-        token,
-        body: {
-          clientId: collabClientId,
-          baseRevision: lastSynced.revision,
-          changeSet,
-        },
-      });
+    const socket = collabSocketRef.current;
+    if (!socket?.connected) {
+      await submitCollabDraftViaHttp(nextContent);
+      return;
+    }
 
-      lastSyncedCollabRef.current = {
-        id: selectedDocumentId,
-        content: data.content,
-        revision: data.headRevision,
-      };
-      setCollabRevision(data.headRevision);
+    socket.emit("submit_revision", {
+      document_id: selectedDocumentId,
+      clientId: collabClientId,
+      baseRevision: lastSynced.revision,
+      changeSet,
+    });
 
-      if (draftContentRef.current === nextContent) {
-        setDraftContent(data.content);
-        setCollabState("live");
-      } else {
-        setCollabState("pending");
+    clearCollabAckTimeout();
+    collabAckTimeoutRef.current = window.setTimeout(() => {
+      if (!collabSubmittingRef.current) {
+        return;
       }
-    } catch (error) {
-      setCollabState("error");
-      setNotice(error.message);
-    } finally {
+
       collabSubmittingRef.current = false;
-    }
-  }
-
-  async function pollCollabRevisions() {
-    if (!selectedDocumentId || collabSubmittingRef.current) {
-      return;
-    }
-
-    const lastSynced = lastSyncedCollabRef.current;
-    if (lastSynced.id !== selectedDocumentId) {
-      return;
-    }
-
-    try {
-      const data = await api(
-        `/api/documents/${selectedDocumentId}/revisions?since=${lastSynced.revision}`,
-        { token },
-      );
-
-      if (!data.revisions.length) {
-        return;
-      }
-
-      const latest = data.revisions[data.revisions.length - 1];
-      if (draftContentRef.current !== lastSynced.content) {
-        return;
-      }
-
-      lastSyncedCollabRef.current = {
-        id: selectedDocumentId,
-        content: latest.contentAfter,
-        revision: data.headRevision,
-      };
-      setDraftContent(latest.contentAfter);
-      setCollabRevision(data.headRevision);
-      setCollabState("live");
-    } catch (error) {
+      pendingCollabSubmitRef.current = null;
       setCollabState("error");
-      setNotice(error.message);
-    }
+      setNotice("Collaboration sync timed out.");
+      resyncCollabRevisions();
+    }, 5000);
   }
+  // Commenting out old collab code
+  // async function pollCollabRevisions() {
+  //   if (!selectedDocumentId || collabSubmittingRef.current) {
+  //     return;
+  //   }
+
+  //   const lastSynced = lastSyncedCollabRef.current;
+  //   if (lastSynced.id !== selectedDocumentId) {
+  //     return;
+  //   }
+
+  //   try {
+  //     const data = await api(
+  //       `/api/documents/${selectedDocumentId}/revisions?since=${lastSynced.revision}`,
+  //       { token },
+  //     );
+
+  //     if (!data.revisions.length) {
+  //       return;
+  //     }
+
+  //     const latest = data.revisions[data.revisions.length - 1];
+  //     if (draftContentRef.current !== lastSynced.content) {
+  //       return;
+  //     }
+
+  //     lastSyncedCollabRef.current = {
+  //       id: selectedDocumentId,
+  //       content: latest.contentAfter,
+  //       revision: data.headRevision,
+  //     };
+  //     setDraftContent(latest.contentAfter);
+  //     setCollabRevision(data.headRevision);
+  //     setCollabState("live");
+  //   } catch (error) {
+  //     setCollabState("error");
+  //     setNotice(error.message);
+  //   }
+  // }
 
   function handleToggleCompare() {
     const nextOpen = !isCompareOpen;

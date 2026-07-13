@@ -7,12 +7,12 @@ from backend.models.document_access import find_document_for_user
 from backend.models.revision_record import (
     get_latest_revision_number,
     list_revisions_after,
-    list_revisions_up_to,
+    # list_revisions_up_to,
     create_revision_record,
 )
 from ot_engine.transformation import transform
 from ot_engine.utils.apply_changeset import apply_changeset
-from ot_engine.models.change_set import changeset_to_dict, changeset_from_dict, text_to_changeset
+from ot_engine.models.change_set import changeset_to_dict, changeset_from_dict
 
 class CollabError(Exception):
     def __init__(self, message, code="bad_request"):
