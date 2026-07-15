@@ -32,6 +32,12 @@ def update_document(document_id, owner_id, title, content):
     )
 
 
+def delete_document(document_id, owner_id):
+    if document_model.find_document(document_id, owner_id) is None:
+        return False
+    return document_model.delete_document(document_id, owner_id)
+
+
 def list_versions(document_id, owner_id):
     if document_access.find_document_for_user(document_id, owner_id) is None:
         return None
@@ -46,6 +52,7 @@ def save_version(document_id, owner_id, content, commit_message):
     commit_message = clean_optional_text(commit_message)
     previous = document_model.get_latest_version(document_id, owner_id)
     next_number = document_model.get_latest_document_version_number(document_id) + 1
+    next_user_number = document_model.get_latest_user_version_number(document_id, owner_id) + 1
     diff_chunks = diff_service.build_diff(previous["content"] if previous else "", content)
     summary = diff_service.generate_stub_summary(diff_chunks, previous is None)
     now = utc_now()
@@ -54,6 +61,7 @@ def save_version(document_id, owner_id, content, commit_message):
         document_id,
         owner_id,
         next_number,
+        next_user_number,
         document["title"],
         content,
         commit_message,
@@ -61,6 +69,12 @@ def save_version(document_id, owner_id, content, commit_message):
         now,
     )
     return version, summary
+
+
+def delete_version(document_id, user_id, version_id):
+    if document_access.find_document_for_user(document_id, user_id) is None:
+        return False
+    return document_model.delete_version(version_id, document_id, user_id)
 
 
 def restore_version(document_id, owner_id, version_id):

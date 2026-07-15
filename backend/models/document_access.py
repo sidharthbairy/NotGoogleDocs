@@ -3,6 +3,7 @@ from backend.database import get_db
 DOCUMENT_SELECT = """
     SELECT
         d.id,
+        d.owner_id,
         d.title,
         d.current_content,
         d.created_at,

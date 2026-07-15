@@ -11,7 +11,14 @@ documents_bp = Blueprint("documents", __name__)
 @require_auth
 def list_documents():
     rows = document_service.list_documents(request.current_user["id"])
-    return jsonify({"documents": [serialize_document(row) for row in rows]})
+    return jsonify(
+        {
+            "documents": [
+                serialize_document(row, request.current_user["id"])
+                for row in rows
+            ]
+        }
+    )
 
 
 @documents_bp.post("")
@@ -27,7 +34,9 @@ def create_document():
         payload.get("title"),
         content,
     )
-    return jsonify({"document": serialize_document(document)}), 201
+    return jsonify(
+        {"document": serialize_document(document, request.current_user["id"])}
+    ), 201
 
 
 @documents_bp.get("/<int:document_id>")
@@ -36,7 +45,16 @@ def get_document(document_id):
     document = document_service.get_document(document_id, request.current_user["id"])
     if document is None:
         return jsonify({"error": "Document not found."}), 404
-    return jsonify({"document": serialize_document(document)})
+    return jsonify({"document": serialize_document(document, request.current_user["id"])})
+
+
+@documents_bp.delete("/<int:document_id>")
+@require_auth
+def delete_document(document_id):
+    deleted = document_service.delete_document(document_id, request.current_user["id"])
+    if not deleted:
+        return jsonify({"error": "Document not found."}), 404
+    return jsonify({"deletedDocumentId": document_id})
 
 
 @documents_bp.patch("/<int:document_id>")
@@ -61,7 +79,9 @@ def update_document(document_id):
     if updated_document is None:
         return jsonify({"error": "Document not found."}), 404
 
-    return jsonify({"document": serialize_document(updated_document)})
+    return jsonify(
+        {"document": serialize_document(updated_document, request.current_user["id"])}
+    )
 
 
 @documents_bp.get("/<int:document_id>/versions")
@@ -97,6 +117,19 @@ def save_version(document_id):
     return jsonify({"version": serialize_version(version), "summary": summary}), 201
 
 
+@documents_bp.delete("/<int:document_id>/versions/<int:version_id>")
+@require_auth
+def delete_version(document_id, version_id):
+    deleted = document_service.delete_version(
+        document_id,
+        request.current_user["id"],
+        version_id,
+    )
+    if not deleted:
+        return jsonify({"error": "Version not found."}), 404
+    return jsonify({"deletedVersionId": version_id})
+
+
 @documents_bp.post("/<int:document_id>/restore")
 @require_auth
 def restore_version(document_id):
@@ -119,7 +152,7 @@ def restore_version(document_id):
 
     return jsonify(
         {
-            "document": serialize_document(restored),
+            "document": serialize_document(restored, request.current_user["id"]),
             "restoredVersion": serialize_version(version),
         }
     )
