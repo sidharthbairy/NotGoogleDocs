@@ -156,6 +156,72 @@ def test_list_versions_returns_versions_newest_first(client, auth_headers, creat
     assert data["versions"][1]["versionNumber"] == 1
 
 
+def test_deleting_version_keeps_remaining_version_numbers(client, auth_headers, create_document):
+    headers = auth_headers()
+    document_id = create_document(headers=headers).get_json()["document"]["id"]
+    versions = []
+
+    for content in ("Version one", "Version two", "Version three"):
+        version = client.post(
+            f"/api/documents/{document_id}/versions",
+            json={"content": content},
+            headers=headers,
+        ).get_json()["version"]
+        versions.append(version)
+
+    response = client.delete(
+        f"/api/documents/{document_id}/versions/{versions[1]['id']}",
+        headers=headers,
+    )
+    remaining = client.get(
+        f"/api/documents/{document_id}/versions",
+        headers=headers,
+    ).get_json()["versions"]
+
+    assert response.status_code == 200
+    assert response.get_json()["deletedVersionId"] == versions[1]["id"]
+    assert [version["versionNumber"] for version in remaining] == [3, 1]
+
+
+def test_users_can_only_delete_their_own_saved_versions(client, auth_headers, create_document):
+    owner_headers = auth_headers("owner@example.com")
+    collaborator_headers = auth_headers("collab@example.com")
+    document_id = create_document(headers=owner_headers).get_json()["document"]["id"]
+
+    owner_version = client.post(
+        f"/api/documents/{document_id}/versions",
+        json={"content": "Owner version"},
+        headers=owner_headers,
+    ).get_json()["version"]
+    client.post(
+        f"/api/documents/{document_id}/share",
+        json={"email": "collab@example.com"},
+        headers=owner_headers,
+    )
+    collaborator_version = client.post(
+        f"/api/documents/{document_id}/versions",
+        json={"content": "Collaborator version"},
+        headers=collaborator_headers,
+    ).get_json()["version"]
+
+    collaborator_response = client.delete(
+        f"/api/documents/{document_id}/versions/{owner_version['id']}",
+        headers=collaborator_headers,
+    )
+    owner_response = client.delete(
+        f"/api/documents/{document_id}/versions/{collaborator_version['id']}",
+        headers=owner_headers,
+    )
+    own_version_response = client.delete(
+        f"/api/documents/{document_id}/versions/{collaborator_version['id']}",
+        headers=collaborator_headers,
+    )
+
+    assert collaborator_response.status_code == 404
+    assert owner_response.status_code == 404
+    assert own_version_response.status_code == 200
+
+
 def test_compare_versions_uses_ai_summary(client, auth_headers, create_document, monkeypatch):
     headers = auth_headers()
 
@@ -194,6 +260,89 @@ def test_compare_versions_uses_ai_summary(client, auth_headers, create_document,
     assert captured["document_title"] == "Test Document"
     assert captured["from_note"] == "Initial scope"
     assert captured["to_note"] == "Clarify scope"
+
+
+def test_only_owner_can_delete_shared_document(client, auth_headers, create_document):
+    owner_headers = auth_headers("owner@example.com")
+    collaborator_headers = auth_headers("collab@example.com")
+    document_id = create_document(headers=owner_headers).get_json()["document"]["id"]
+
+    client.post(
+        f"/api/documents/{document_id}/share",
+        json={"email": "collab@example.com"},
+        headers=owner_headers,
+    )
+
+    owner_document = client.get(
+        f"/api/documents/{document_id}",
+        headers=owner_headers,
+    ).get_json()["document"]
+    collaborator_document = client.get(
+        f"/api/documents/{document_id}",
+        headers=collaborator_headers,
+    ).get_json()["document"]
+    response = client.delete(
+        f"/api/documents/{document_id}",
+        headers=collaborator_headers,
+    )
+
+    assert owner_document["isOwner"] is True
+    assert collaborator_document["isOwner"] is False
+    assert response.status_code == 404
+    assert client.get(f"/api/documents/{document_id}", headers=owner_headers).status_code == 200
+
+
+def test_deleting_document_removes_related_data(client, app, auth_headers, create_document):
+    owner_headers = auth_headers("owner@example.com")
+    collaborator_headers = auth_headers("collab@example.com")
+    document_id = create_document(headers=owner_headers).get_json()["document"]["id"]
+
+    client.post(
+        f"/api/documents/{document_id}/versions",
+        json={"content": "Saved content"},
+        headers=owner_headers,
+    )
+    client.post(
+        f"/api/documents/{document_id}/share",
+        json={"email": "collab@example.com"},
+        headers=owner_headers,
+    )
+
+    with app.app_context():
+        owner_id = get_db().execute(
+            "SELECT id FROM users WHERE email = ?",
+            ("owner@example.com",),
+        ).fetchone()["id"]
+        create_revision_record(
+            document_id,
+            owner_id,
+            "test-client",
+            1,
+            0,
+            {"baseLength": 11, "ops": [{"type": "retain", "count": 11}]},
+            "Hello world",
+            "2026-07-15T00:00:00Z",
+        )
+
+    response = client.delete(f"/api/documents/{document_id}", headers=owner_headers)
+
+    assert response.status_code == 200
+    assert response.get_json()["deletedDocumentId"] == document_id
+
+    with app.app_context():
+        for table in (
+            "document_versions",
+            "document_revisions",
+            "document_collaborators",
+            "documents",
+        ):
+            count = get_db().execute(
+                f"SELECT COUNT(*) AS count FROM {table} WHERE document_id = ?"
+                if table != "documents"
+                else "SELECT COUNT(*) AS count FROM documents WHERE id = ?",
+                (document_id,),
+            ).fetchone()["count"]
+            assert count == 0
 
 
 def test_shared_users_have_private_marked_versions(client, auth_headers, create_document):

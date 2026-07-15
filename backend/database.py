@@ -56,6 +56,7 @@ def init_db():
             document_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             version_number INTEGER NOT NULL,
+            user_version_number INTEGER NOT NULL,
             title TEXT NOT NULL DEFAULT 'Untitled document',
             content TEXT NOT NULL,
             commit_message TEXT NOT NULL DEFAULT '',
@@ -107,6 +108,20 @@ def init_db():
         "title",
         "TEXT NOT NULL DEFAULT 'Untitled document'",
     )
+    ensure_column("document_versions", "user_version_number", "INTEGER")
+    get_db().execute(
+        """
+        UPDATE document_versions
+        SET user_version_number = (
+            SELECT COUNT(*)
+            FROM document_versions AS earlier
+            WHERE earlier.document_id = document_versions.document_id
+                AND earlier.user_id = document_versions.user_id
+                AND earlier.version_number <= document_versions.version_number
+        )
+        WHERE user_version_number IS NULL
+        """
+    )
     get_db().execute(
         "CREATE INDEX IF NOT EXISTS idx_documents_owner ON documents (owner_id, updated_at)"
     )
@@ -114,6 +129,12 @@ def init_db():
         """
         CREATE INDEX IF NOT EXISTS idx_versions_document
         ON document_versions (document_id, version_number)
+        """
+    )
+    get_db().execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_versions_user_number
+        ON document_versions (document_id, user_id, user_version_number)
         """
     )
     get_db().commit()
