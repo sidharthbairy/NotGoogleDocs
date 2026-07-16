@@ -391,6 +391,15 @@ h2 {
   height: 32px;
 }
 
+.icon-action.danger {
+  color: #b3261e;
+}
+
+.icon-action.danger:hover {
+  background: #fce8e6;
+  border-color: #f2b8b5;
+}
+
 .icon-action:hover,
 .secondary-action:hover {
   background: #f8fafd;
@@ -602,6 +611,11 @@ select {
 
 .version-item-head {
   justify-content: space-between;
+}
+
+.version-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .version-item-head div {

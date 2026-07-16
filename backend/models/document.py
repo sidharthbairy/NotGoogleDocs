@@ -3,6 +3,7 @@ from backend.database import get_db, get_cursor
 DOCUMENT_SELECT = """
     SELECT
         d.id,
+        d.owner_id,
         d.title,
         d.current_content,
         d.created_at,
@@ -13,7 +14,8 @@ DOCUMENT_SELECT = """
 """
 
 VERSION_SELECT = """
-    SELECT id, document_id, version_number, title, content, commit_message, summary, created_at
+    SELECT id, document_id, version_number, user_version_number, title, content,
+        commit_message, summary, created_at
     FROM document_versions
 """
 
@@ -87,6 +89,24 @@ def restore_document_content(document_id, content, updated_at):
     get_db().commit()
 
 
+def delete_document(document_id, owner_id):
+    database = get_db()
+    try:
+        database.execute("DELETE FROM document_versions WHERE document_id = ?", (document_id,))
+        database.execute("DELETE FROM document_revisions WHERE document_id = ?", (document_id,))
+        database.execute("DELETE FROM document_collaborators WHERE document_id = ?", (document_id,))
+        cursor = database.execute(
+            "DELETE FROM documents WHERE id = ? AND owner_id = ?",
+            (document_id, owner_id),
+        )
+        database.commit()
+    except Exception:
+        database.rollback()
+        raise
+
+    return cursor.rowcount > 0
+
+
 def list_versions(document_id, user_id):
     cur = get_cursor()
     cur.execute(
@@ -141,6 +161,18 @@ def get_latest_document_version_number(document_id):
     return row["latest_version"]
 
 
+def get_latest_user_version_number(document_id, user_id):
+    row = get_db().execute(
+        """
+        SELECT COALESCE(MAX(user_version_number), 0) AS latest_version
+        FROM document_versions
+        WHERE document_id = ? AND user_id = ?
+        """,
+        (document_id, user_id),
+    ).fetchone()
+    return row["latest_version"]
+
+
 def get_version(version_id, document_id, user_id):
     cur = get_cursor()
     cur.execute(
@@ -167,10 +199,23 @@ def get_version(version_id, document_id, user_id):
     return cur.fetchone()
 
 
+def delete_version(version_id, document_id, user_id):
+    cursor = get_db().execute(
+        """
+        DELETE FROM document_versions
+        WHERE id = ? AND document_id = ? AND user_id = ?
+        """,
+        (version_id, document_id, user_id),
+    )
+    get_db().commit()
+    return cursor.rowcount > 0
+
+
 def create_version(
     document_id,
     user_id,
     version_number,
+    user_version_number,
     title,
     content,
     commit_message,
@@ -189,6 +234,7 @@ def create_version(
             document_id,
             user_id,
             version_number,
+            user_version_number,
             title,
             content,
             commit_message,

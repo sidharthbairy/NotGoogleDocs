@@ -86,6 +86,7 @@ def init_db():
             document_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             version_number INTEGER NOT NULL,
+            user_version_number INTEGER NOT NULL,
             title TEXT NOT NULL DEFAULT 'Untitled document',
             content TEXT NOT NULL,
             commit_message TEXT NOT NULL DEFAULT '',
@@ -144,6 +145,12 @@ def init_db():
         """
         CREATE INDEX IF NOT EXISTS idx_versions_document
         ON document_versions (document_id, version_number)
+        """
+    )
+    get_db().execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_versions_user_number
+        ON document_versions (document_id, user_id, user_version_number)
         """
     )
     get_db().commit()

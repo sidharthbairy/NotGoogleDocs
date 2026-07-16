@@ -12,6 +12,7 @@ import {
   RotateCcw,
   Save,
   Split,
+  Trash2,
   Users,
 } from "lucide-react";
 import "./styles.css";
@@ -223,6 +224,7 @@ function Workspace({ token, user, onSignOut }) {
   const [collabState, setCollabState] = useState("idle");
   const [shareEmail, setShareEmail] = useState("");
   const [shareState, setShareState] = useState("idle");
+  const [deletingVersionId, setDeletingVersionId] = useState(null);
   const [status, setStatus] = useState("loading");
   const [notice, setNotice] = useState("");
   const [collabClientId] = useState(() => getOrCreateClientId());
@@ -236,7 +238,8 @@ function Workspace({ token, user, onSignOut }) {
   const collabAckTimeoutRef = useRef(null);
 
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId);
-  const canSaveVersion = Boolean(selectedDocumentId) && status !== "saving";
+  const canSaveVersion =
+    Boolean(selectedDocumentId) && status !== "saving" && status !== "deleting";
   const hasComparableVersions = versions.length >= 2;
 
   useEffect(() => {
@@ -635,6 +638,86 @@ function Workspace({ token, user, onSignOut }) {
     }
   }
 
+  async function handleDeleteDocument() {
+    if (!selectedDocument?.isOwner) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${selectedDocument.title}"? This also deletes its saved versions and collaboration history.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const documentId = selectedDocument.id;
+    setStatus("deleting");
+    setNotice("");
+    try {
+      await api(`/api/documents/${documentId}`, {
+        method: "DELETE",
+        token,
+      });
+
+      const remainingDocuments = documents.filter((document) => document.id !== documentId);
+      setDocuments(remainingDocuments);
+      setSelectedDocumentId(remainingDocuments[0]?.id ?? null);
+      setVersions([]);
+      setDraftTitle("");
+      setDraftContent("");
+      setCommitMessage("");
+      setDiff(null);
+      setIsCompareOpen(false);
+      setFromVersionId("");
+      setToVersionId("");
+      setCollabEnabled(false);
+      lastSavedDraftRef.current = { id: null, title: "", content: "" };
+      lastSyncedCollabRef.current = { id: null, content: "", revision: 0 };
+      setNotice("Document deleted.");
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setStatus("idle");
+    }
+  }
+
+  async function handleDeleteVersion(version) {
+    if (!selectedDocumentId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete Version ${version.versionNumber}? This cannot be undone.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingVersionId(version.id);
+    setNotice("");
+    try {
+      await api(`/api/documents/${selectedDocumentId}/versions/${version.id}`, {
+        method: "DELETE",
+        token,
+      });
+      setDocuments((current) =>
+        current.map((document) =>
+          document.id === selectedDocumentId
+            ? { ...document, versionCount: Math.max(0, (document.versionCount || 1) - 1) }
+            : document,
+        ),
+      );
+      setDiff(null);
+      setIsCompareOpen(false);
+      await loadVersions(selectedDocumentId);
+      setNotice(`Deleted Version ${version.versionNumber}.`);
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setDeletingVersionId(null);
+    }
+  }
+
   async function handleRestoreVersion(version) {
     if (!selectedDocumentId) {
       return;
@@ -917,6 +1000,23 @@ function Workspace({ token, user, onSignOut }) {
                   value={draftTitle}
                 />
                 <div className="toolbar-actions">
+                  {selectedDocument.isOwner ? (
+                    <button
+                      aria-label={`Delete ${selectedDocument.title}`}
+                      className="icon-action danger"
+                      data-testid="delete-document"
+                      disabled={status === "deleting"}
+                      onClick={handleDeleteDocument}
+                      title="Delete document"
+                      type="button"
+                    >
+                      {status === "deleting" ? (
+                        <RefreshCcw className="spinner" size={18} aria-hidden="true" />
+                      ) : (
+                        <Trash2 size={18} aria-hidden="true" />
+                      )}
+                    </button>
+                  ) : null}
                   <button
                     className={collabEnabled ? "secondary-action collab-toggle active" : "secondary-action collab-toggle"}
                     disabled={!selectedDocumentId || collabState === "syncing"}
@@ -1029,16 +1129,32 @@ function Workspace({ token, user, onSignOut }) {
                         {formatDate(version.createdAt)}
                       </small>
                     </div>
-                    <button
-                      aria-label={`Restore version ${version.versionNumber}`}
-                      className="icon-action compact"
-                      disabled={status === "saving"}
-                      onClick={() => handleRestoreVersion(version)}
-                      title={`Restore version ${version.versionNumber}`}
-                      type="button"
-                    >
-                      <RotateCcw size={16} aria-hidden="true" />
-                    </button>
+                    <span className="version-actions">
+                      <button
+                        aria-label={`Restore version ${version.versionNumber}`}
+                        className="icon-action compact"
+                        disabled={status === "saving" || deletingVersionId !== null}
+                        onClick={() => handleRestoreVersion(version)}
+                        title={`Restore version ${version.versionNumber}`}
+                        type="button"
+                      >
+                        <RotateCcw size={16} aria-hidden="true" />
+                      </button>
+                      <button
+                        aria-label={`Delete version ${version.versionNumber}`}
+                        className="icon-action compact danger"
+                        disabled={deletingVersionId !== null}
+                        onClick={() => handleDeleteVersion(version)}
+                        title={`Delete version ${version.versionNumber}`}
+                        type="button"
+                      >
+                        {deletingVersionId === version.id ? (
+                          <RefreshCcw className="spinner" size={16} aria-hidden="true" />
+                        ) : (
+                          <Trash2 size={16} aria-hidden="true" />
+                        )}
+                      </button>
+                    </span>
                   </header>
                   <p>{version.commitMessage || version.summary}</p>
                 </article>
