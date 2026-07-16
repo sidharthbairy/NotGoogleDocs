@@ -1,15 +1,33 @@
-import sqlite3
+import os
 
+import psycopg2
 from flask import g
+from psycopg2.extras import RealDictCursor
 
-from backend.config import DATABASE_PATH
+
+def _connect():
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        return psycopg2.connect(database_url)
+
+    return psycopg2.connect(
+        host=os.environ.get("DB_HOST", "localhost"),
+        dbname=os.environ.get("DB_NAME", "notgoogledocs"),
+        user=os.environ["DB_USERNAME"],
+        password=os.environ["DB_PASSWORD"],
+    )
 
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DATABASE_PATH)
-        g.db.row_factory = sqlite3.Row
+        g.db = _connect()
     return g.db
+
+
+def get_cursor():
+    return get_db().cursor(cursor_factory=RealDictCursor)
 
 
 def close_db(_exception):
@@ -19,27 +37,39 @@ def close_db(_exception):
 
 
 def ensure_column(table_name, column_name, definition):
-    columns = get_db().execute(f"PRAGMA table_info({table_name})").fetchall()
+    cur = get_cursor()
+    cur.execute(
+        """
+        SELECT column_name AS name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = %s
+        """,
+        (table_name,),
+    )
+    columns = cur.fetchall()
     if any(column["name"] == column_name for column in columns):
         return
-    get_db().execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
+
+    cur.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
 
 def init_db():
-    get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
         """
     )
-    get_db().execute(
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS documents (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             owner_id INTEGER NOT NULL,
             title TEXT NOT NULL,
             current_content TEXT NOT NULL DEFAULT '',
@@ -49,10 +79,10 @@ def init_db():
         )
         """
     )
-    get_db().execute(
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS document_versions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             document_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             version_number INTEGER NOT NULL,
@@ -68,10 +98,10 @@ def init_db():
         )
         """
     )
-    get_db().execute(
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS document_revisions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             document_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             client_id TEXT NOT NULL,
@@ -88,10 +118,10 @@ def init_db():
     )
     ensure_column("document_revisions", "content_after", "TEXT NOT NULL DEFAULT ''")
 
-    get_db().execute(
+    cur.execute(
         """
         CREATE TABLE IF NOT EXISTS document_collaborators (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             document_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             role TEXT NOT NULL DEFAULT 'editor',
@@ -102,30 +132,16 @@ def init_db():
         )
         """
     )
-    
+
     ensure_column(
         "document_versions",
         "title",
         "TEXT NOT NULL DEFAULT 'Untitled document'",
     )
-    ensure_column("document_versions", "user_version_number", "INTEGER")
-    get_db().execute(
-        """
-        UPDATE document_versions
-        SET user_version_number = (
-            SELECT COUNT(*)
-            FROM document_versions AS earlier
-            WHERE earlier.document_id = document_versions.document_id
-                AND earlier.user_id = document_versions.user_id
-                AND earlier.version_number <= document_versions.version_number
-        )
-        WHERE user_version_number IS NULL
-        """
-    )
-    get_db().execute(
+    cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_documents_owner ON documents (owner_id, updated_at)"
     )
-    get_db().execute(
+    cur.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_versions_document
         ON document_versions (document_id, version_number)

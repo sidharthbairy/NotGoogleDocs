@@ -3,7 +3,7 @@ from functools import wraps
 from flask import jsonify, request
 from itsdangerous import BadSignature, SignatureExpired
 
-from backend.database import get_db
+from backend.database import get_cursor
 from backend.services.auth_service import decode_token
 
 
@@ -23,10 +23,12 @@ def require_auth(route):
         except BadSignature:
             return jsonify({"error": "Invalid auth token."}), 401
 
-        user_row = get_db().execute(
-            "SELECT id, email FROM users WHERE id = ?",
+        cur = get_cursor()
+        cur.execute(
+            "SELECT id, email FROM users WHERE id = %s",
             (token_user["id"],),
-        ).fetchone()
+        )
+        user_row = cur.fetchone()
         if user_row is None:
             return jsonify({"error": "User no longer exists."}), 401
 

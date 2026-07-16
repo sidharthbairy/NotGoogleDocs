@@ -1,27 +1,34 @@
-from backend.database import get_db
+from backend.database import get_db, get_cursor
 
 
 def find_user_by_email(email):
-    return get_db().execute(
-        "SELECT id, email, password_hash FROM users WHERE email = ?",
+    cur = get_cursor()
+    cur.execute(
+        "SELECT id, email, password_hash FROM users WHERE email = %s",
         (email,),
-    ).fetchone()
+    )
+    return cur.fetchone()
 
 
 def find_user_by_id(user_id):
-    return get_db().execute(
-        "SELECT id, email FROM users WHERE id = ?",
+    cur = get_cursor()
+    cur.execute(
+        "SELECT id, email FROM users WHERE id = %s",
         (user_id,),
-    ).fetchone()
+    )
+    return cur.fetchone()
 
 
 def create_user(email, password_hash, created_at):
-    cursor = get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         INSERT INTO users (email, password_hash, created_at)
-        VALUES (?, ?, ?)
+        VALUES (%s, %s, %s)
+        RETURNING id
         """,
         (email, password_hash, created_at),
     )
+    row = cur.fetchone()
     get_db().commit()
-    return {"id": cursor.lastrowid, "email": email}
+    return {"id": row["id"], "email": email}

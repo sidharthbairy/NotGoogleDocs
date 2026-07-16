@@ -1,12 +1,15 @@
+import os
+
 import pytest
+
+from backend import config
 from backend.app import create_app
-import backend.database as database_module
 
 
 @pytest.fixture()
-def app(tmp_path, monkeypatch):
-    test_db_path = tmp_path / "test.sqlite3"
-    monkeypatch.setattr(database_module, "DATABASE_PATH", str(test_db_path))
+def app(monkeypatch):
+    config._load_env_file(os.path.join(os.path.dirname(config.__file__), ".env"))
+    monkeypatch.setenv("DB_NAME", os.environ.get("DB_NAME", "notgoogledocs") + "_test")
 
     app = create_app()
     app.config.update({
