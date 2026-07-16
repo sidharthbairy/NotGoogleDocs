@@ -1,4 +1,4 @@
-import sqlite3
+import psycopg2
 from datetime import datetime, timezone
 
 from flask import current_app
@@ -33,7 +33,7 @@ def register(email, password):
 
     try:
         user = user_model.create_user(email, password_hash, now)
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
         return None, "An account with that email already exists."
 
     return {"token": create_token(user), "user": user}, None

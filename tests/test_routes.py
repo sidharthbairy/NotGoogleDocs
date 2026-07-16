@@ -1,4 +1,4 @@
-from backend.database import get_db
+from backend.database import get_cursor
 from backend.models.revision_record import create_revision_record
 from backend.services import ai_summary_service
 
@@ -580,10 +580,12 @@ def test_get_revisions_since_returns_revision_rows(client, auth_headers, create_
     document_id = doc_response.get_json()["document"]["id"]
 
     with client.application.app_context():
-        user = get_db().execute(
-            "SELECT id FROM users WHERE email = ?",
+        cur = get_cursor()
+        cur.execute(
+            "SELECT id FROM users WHERE email = %s",
             ("writer@example.com",),
-        ).fetchone()
+        )
+        user = cur.fetchone()
         create_revision_record(
             document_id=document_id,
             user_id=user["id"],

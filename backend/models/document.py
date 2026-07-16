@@ -1,4 +1,4 @@
-from backend.database import get_db
+from backend.database import get_db, get_cursor
 
 DOCUMENT_SELECT = """
     SELECT
@@ -19,46 +19,54 @@ VERSION_SELECT = """
 
 
 def find_document(document_id, owner_id):
-    return get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         f"""
         {DOCUMENT_SELECT}
-        WHERE d.id = ? AND d.owner_id = ?
+        WHERE d.id = %s AND d.owner_id = %s
         GROUP BY d.id
         """,
         (document_id, owner_id),
-    ).fetchone()
+    )
+    return cur.fetchone()
 
 
 def list_documents(owner_id):
-    return get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         f"""
         {DOCUMENT_SELECT}
-        WHERE d.owner_id = ?
+        WHERE d.owner_id = %s
         GROUP BY d.id
         ORDER BY d.updated_at DESC
         """,
         (owner_id,),
-    ).fetchall()
+    )
+    return cur.fetchall()
 
 
 def create_document(owner_id, title, content, created_at, updated_at):
-    cursor = get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         INSERT INTO documents (owner_id, title, current_content, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
+        RETURNING id
         """,
         (owner_id, title, content, created_at, updated_at),
     )
+    row = cur.fetchone()
     get_db().commit()
-    return find_document(cursor.lastrowid, owner_id)
+    return find_document(row["id"], owner_id)
 
 
 def update_document(document_id, owner_id, title, content, updated_at):
-    get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         UPDATE documents
-        SET title = ?, current_content = ?, updated_at = ?
-        WHERE id = ? AND owner_id = ?
+        SET title = %s, current_content = %s, updated_at = %s
+        WHERE id = %s AND owner_id = %s
         """,
         (title, content, updated_at, document_id, owner_id),
     )
@@ -67,11 +75,12 @@ def update_document(document_id, owner_id, title, content, updated_at):
 
 
 def restore_document_content(document_id, content, updated_at):
-    get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         UPDATE documents
-        SET current_content = ?, updated_at = ?
-        WHERE id = ?
+        SET current_content = %s, updated_at = %s
+        WHERE id = %s
         """,
         (content, updated_at, document_id),
     )
@@ -79,7 +88,8 @@ def restore_document_content(document_id, content, updated_at):
 
 
 def list_versions(document_id, user_id):
-    return get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         SELECT *
         FROM (
@@ -94,41 +104,46 @@ def list_versions(document_id, user_id):
                 created_at,
                 ROW_NUMBER() OVER (ORDER BY version_number ASC) AS user_version_number
             FROM document_versions
-            WHERE document_id = ? AND user_id = ?
-        )
+            WHERE document_id = %s AND user_id = %s
+        ) AS user_versions
         ORDER BY version_number DESC
         """,
         (document_id, user_id),
-    ).fetchall()
+    )
+    return cur.fetchall()
 
 
 def get_latest_version(document_id, user_id):
-    return get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         f"""
         {VERSION_SELECT}
-        WHERE document_id = ? AND user_id = ?
+        WHERE document_id = %s AND user_id = %s
         ORDER BY version_number DESC
         LIMIT 1
         """,
         (document_id, user_id),
-    ).fetchone()
+    )
+    return cur.fetchone()
 
 
 def get_latest_document_version_number(document_id):
-    row = get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         SELECT COALESCE(MAX(version_number), 0) AS latest_version
         FROM document_versions
-        WHERE document_id = ?
+        WHERE document_id = %s
         """,
         (document_id,),
-    ).fetchone()
-
+    )
+    row = cur.fetchone()
     return row["latest_version"]
 
 
 def get_version(version_id, document_id, user_id):
-    return get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         SELECT *
         FROM (
@@ -143,12 +158,13 @@ def get_version(version_id, document_id, user_id):
                 created_at,
                 ROW_NUMBER() OVER (ORDER BY version_number ASC) AS user_version_number
             FROM document_versions
-            WHERE document_id = ? AND user_id = ?
-        )
-        WHERE id = ?
+            WHERE document_id = %s AND user_id = %s
+        ) AS user_versions
+        WHERE id = %s
         """,
         (document_id, user_id, version_id),
-    ).fetchone()
+    )
+    return cur.fetchone()
 
 
 def create_version(
@@ -161,11 +177,13 @@ def create_version(
     summary,
     created_at,
 ):
-    cursor = get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         INSERT INTO document_versions
             (document_id, user_id, version_number, title, content, commit_message, summary, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
         """,
         (
             document_id,
@@ -178,13 +196,14 @@ def create_version(
             created_at,
         ),
     )
-    get_db().execute(
+    row = cur.fetchone()
+    cur.execute(
         """
         UPDATE documents
-        SET current_content = ?, updated_at = ?
-        WHERE id = ?
+        SET current_content = %s, updated_at = %s
+        WHERE id = %s
         """,
         (content, created_at, document_id),
     )
     get_db().commit()
-    return get_version(cursor.lastrowid, document_id, user_id)
+    return get_version(row["id"], document_id, user_id)

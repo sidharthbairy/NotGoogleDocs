@@ -19,10 +19,10 @@ def _load_env_file(path):
 
 _load_env_file(os.path.join(os.path.dirname(__file__), ".env"))
 
-DATABASE_PATH = os.environ.get(
-    "DATABASE_PATH",
-    os.path.join(os.path.dirname(__file__), "notgoogledocs.sqlite3"),
-)
+# DATABASE_PATH = os.environ.get(
+#     "DATABASE_PATH",
+#     os.path.join(os.path.dirname(__file__), "notgoogledocs.sqlite3"),
+# )
 TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
 DEFAULT_SECRET_KEY = "dev-only-change-me-before-deployment"
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")

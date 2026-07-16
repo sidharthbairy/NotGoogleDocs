@@ -1,7 +1,7 @@
 import json
 from datetime import datetime, timezone
 
-from backend.database import get_db
+from backend.database import get_db, get_cursor
 from backend.models.document import find_document
 from backend.models.document_access import find_document_for_user
 from backend.models.revision_record import (
@@ -64,7 +64,8 @@ def submit_collab_change(
     incoming_change_dict,
 ):
     db = get_db()
-    db.execute("BEGIN IMMEDIATE")
+    cur = get_cursor()
+    cur.execute("BEGIN")
 
     try:
         document = find_document_for_user(document_id, user_id)
@@ -100,11 +101,11 @@ def submit_collab_change(
             created_at=now,
         )
 
-        db.execute(
+        cur.execute(
             """
             UPDATE documents
-            SET current_content = ?, updated_at = ?
-            WHERE id = ?
+            SET current_content = %s, updated_at = %s
+            WHERE id = %s
             """,
             (new_content, now, document_id),
         )

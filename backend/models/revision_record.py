@@ -1,5 +1,6 @@
 import json
-from backend.database import get_db
+
+from backend.database import get_db, get_cursor
 
 REVISION_SELECT = """
     SELECT
@@ -15,49 +16,61 @@ REVISION_SELECT = """
     FROM document_revisions
 """
 
+
 def get_latest_revision_number(document_id):
-    row = get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         SELECT COALESCE(MAX(revision_number), 0) AS latest_revision
         FROM document_revisions
-        WHERE document_id = ?
+        WHERE document_id = %s
         """,
         (document_id,),
-    ).fetchone()
-
+    )
+    row = cur.fetchone()
     return row["latest_revision"]
 
+
 def list_revisions_after(document_id, base_revision):
-    return get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         f"""
         {REVISION_SELECT}
-        WHERE document_id = ?
-            AND revision_number > ?
+        WHERE document_id = %s
+            AND revision_number > %s
         ORDER BY revision_number ASC
         """,
         (document_id, base_revision),
-    ).fetchall()
+    )
+    return cur.fetchall()
+
 
 def list_revisions_up_to(document_id, revision_number):
-    return get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         f"""
         {REVISION_SELECT}
-        WHERE document_id = ?
-          AND revision_number <= ?
+        WHERE document_id = %s
+          AND revision_number <= %s
         ORDER BY revision_number ASC
         """,
         (document_id, revision_number),
-    ).fetchall()
+    )
+    return cur.fetchall()
+
 
 def get_revision(document_id, revision_number):
-    return get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         f"""
         {REVISION_SELECT}
-        WHERE document_id = ?
-            AND revision_number = ?
+        WHERE document_id = %s
+            AND revision_number = %s
         """,
         (document_id, revision_number),
-    ).fetchone()
+    )
+    return cur.fetchone()
+
 
 def create_revision_record(
     document_id,
@@ -67,9 +80,10 @@ def create_revision_record(
     base_revision,
     change_set,
     content_after,
-    created_at
+    created_at,
 ):
-    cursor = get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         INSERT INTO document_revisions
             (
@@ -82,7 +96,8 @@ def create_revision_record(
                 content_after,
                 created_at
             )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
         """,
         (
             document_id,
@@ -95,13 +110,15 @@ def create_revision_record(
             created_at,
         ),
     )
-
+    row = cur.fetchone()
     get_db().commit()
 
-    return get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         f"""
         {REVISION_SELECT}
-        WHERE id = ?
+        WHERE id = %s
         """,
-        (cursor.lastrowid,),
-    ).fetchone()
+        (row["id"],),
+    )
+    return cur.fetchone()

@@ -9,7 +9,7 @@ def _parse_change_set(raw_value):
 
 def serialize_revision_row(row):
     """
-    Convert a sqlite3.Row from document_revisions into API JSON.
+    Convert a postgresql Row from document_revisions into API JSON.
     """
     return {
         "id": row["id"],
