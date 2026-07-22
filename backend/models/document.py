@@ -91,42 +91,31 @@ def restore_document_content(document_id, content, updated_at):
 
 def delete_document(document_id, owner_id):
     database = get_db()
+    cur = get_cursor()
     try:
-        database.execute("DELETE FROM document_versions WHERE document_id = ?", (document_id,))
-        database.execute("DELETE FROM document_revisions WHERE document_id = ?", (document_id,))
-        database.execute("DELETE FROM document_collaborators WHERE document_id = ?", (document_id,))
-        cursor = database.execute(
-            "DELETE FROM documents WHERE id = ? AND owner_id = ?",
+        cur.execute("DELETE FROM document_versions WHERE document_id = %s", (document_id,))
+        cur.execute("DELETE FROM document_revisions WHERE document_id = %s", (document_id,))
+        cur.execute("DELETE FROM document_collaborators WHERE document_id = %s", (document_id,))
+        cur.execute(
+            "DELETE FROM documents WHERE id = %s AND owner_id = %s",
             (document_id, owner_id),
         )
+        deleted = cur.rowcount > 0
         database.commit()
     except Exception:
         database.rollback()
         raise
 
-    return cursor.rowcount > 0
+    return deleted
 
 
 def list_versions(document_id, user_id):
     cur = get_cursor()
     cur.execute(
-        """
-        SELECT *
-        FROM (
-            SELECT
-                id,
-                document_id,
-                version_number,
-                title,
-                content,
-                commit_message,
-                summary,
-                created_at,
-                ROW_NUMBER() OVER (ORDER BY version_number ASC) AS user_version_number
-            FROM document_versions
-            WHERE document_id = %s AND user_id = %s
-        ) AS user_versions
-        ORDER BY version_number DESC
+        f"""
+        {VERSION_SELECT}
+        WHERE document_id = %s AND user_id = %s
+        ORDER BY user_version_number DESC
         """,
         (document_id, user_id),
     )
@@ -162,53 +151,42 @@ def get_latest_document_version_number(document_id):
 
 
 def get_latest_user_version_number(document_id, user_id):
-    row = get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         SELECT COALESCE(MAX(user_version_number), 0) AS latest_version
         FROM document_versions
-        WHERE document_id = ? AND user_id = ?
+        WHERE document_id = %s AND user_id = %s
         """,
         (document_id, user_id),
-    ).fetchone()
+    )
+    row = cur.fetchone()
     return row["latest_version"]
 
 
 def get_version(version_id, document_id, user_id):
     cur = get_cursor()
     cur.execute(
-        """
-        SELECT *
-        FROM (
-            SELECT
-                id,
-                document_id,
-                version_number,
-                title,
-                content,
-                commit_message,
-                summary,
-                created_at,
-                ROW_NUMBER() OVER (ORDER BY version_number ASC) AS user_version_number
-            FROM document_versions
-            WHERE document_id = %s AND user_id = %s
-        ) AS user_versions
-        WHERE id = %s
+        f"""
+        {VERSION_SELECT}
+        WHERE id = %s AND document_id = %s AND user_id = %s
         """,
-        (document_id, user_id, version_id),
+        (version_id, document_id, user_id),
     )
     return cur.fetchone()
 
 
 def delete_version(version_id, document_id, user_id):
-    cursor = get_db().execute(
+    cur = get_cursor()
+    cur.execute(
         """
         DELETE FROM document_versions
-        WHERE id = ? AND document_id = ? AND user_id = ?
+        WHERE id = %s AND document_id = %s AND user_id = %s
         """,
         (version_id, document_id, user_id),
     )
     get_db().commit()
-    return cursor.rowcount > 0
+    return cur.rowcount > 0
 
 
 def create_version(
@@ -226,8 +204,9 @@ def create_version(
     cur.execute(
         """
         INSERT INTO document_versions
-            (document_id, user_id, version_number, title, content, commit_message, summary, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            (document_id, user_id, version_number, user_version_number, title,
+             content, commit_message, summary, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
         (
