@@ -147,7 +147,7 @@ def init_db():
         ON document_versions (document_id, version_number)
         """
     )
-    get_db().execute(
+    cur.execute(
         """
         CREATE UNIQUE INDEX IF NOT EXISTS idx_versions_user_number
         ON document_versions (document_id, user_id, user_version_number)
