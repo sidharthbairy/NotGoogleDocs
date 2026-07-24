@@ -13,10 +13,10 @@ iniconfig==2.3.0
 itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.3
--e git+https://github.com/sidharthbairy/NotGoogleDocs.git@90271a8759be1d67a14b7a9106f001e97103a780#egg=notgoogledocs
+# -e git+https://github.com/sidharthbairy/NotGoogleDocs.git@90271a8759be1d67a14b7a9106f001e97103a780#egg=notgoogledocs
 packaging==26.2
 pluggy==1.6.0
-psycopg2==2.9.12
+psycopg2-binary==2.9.12
 Pygments==2.20.0
 pytest==9.0.3
 python-engineio==4.13.2
