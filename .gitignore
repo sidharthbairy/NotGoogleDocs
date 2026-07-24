@@ -1,10 +1,12 @@
 backend/.venv/
 backend/.env
+backend/.env.example
 backend/*.sqlite3
 __pycache__/
 *.pyc
 *.egg-info/
 frontend/node_modules/
 frontend/dist/
+frontend/.env.local
 .DS_Store
 videos/
