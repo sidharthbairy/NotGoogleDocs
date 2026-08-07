@@ -97,8 +97,9 @@ def test_save_first_version(client, auth_headers, create_document):
     assert data["version"]["versionNumber"] == 1
     assert data["version"]["content"] == "Hello world"
     assert data["version"]["commitMessage"] == "First save"
+    assert data["version"]["summary"] == ""
     assert "title" not in data["version"]
-    assert data["summary"] == "Initial snapshot saved."
+    assert "summary" not in data
 
 
 def test_save_second_version_increments_version_number(client, auth_headers, create_document):
