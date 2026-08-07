@@ -105,7 +105,7 @@ def save_version(document_id):
     if not isinstance(content, str):
         return jsonify({"error": "Document content must be text."}), 400
 
-    version, summary = document_service.save_version(
+    version = document_service.save_version(
         document_id,
         request.current_user["id"],
         content,
@@ -114,7 +114,7 @@ def save_version(document_id):
     if version is None:
         return jsonify({"error": "Document not found."}), 404
 
-    return jsonify({"version": serialize_version(version), "summary": summary}), 201
+    return jsonify({"version": serialize_version(version)}), 201
 
 
 @documents_bp.delete("/<int:document_id>/versions/<int:version_id>")

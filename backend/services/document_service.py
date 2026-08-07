@@ -47,17 +47,14 @@ def list_versions(document_id, owner_id):
 def save_version(document_id, owner_id, content, commit_message):
     document = document_access.find_document_for_user(document_id, owner_id)
     if document is None:
-        return None, None
+        return None
 
     commit_message = clean_optional_text(commit_message)
-    previous = document_model.get_latest_version(document_id, owner_id)
     next_number = document_model.get_latest_document_version_number(document_id) + 1
     next_user_number = document_model.get_latest_user_version_number(document_id, owner_id) + 1
-    diff_chunks = diff_service.build_diff(previous["content"] if previous else "", content)
-    summary = diff_service.generate_stub_summary(diff_chunks, previous is None)
     now = utc_now()
 
-    version = document_model.create_version(
+    return document_model.create_version(
         document_id,
         owner_id,
         next_number,
@@ -65,10 +62,9 @@ def save_version(document_id, owner_id, content, commit_message):
         document["title"],
         content,
         commit_message,
-        summary,
+        "",
         now,
     )
-    return version, summary
 
 
 def delete_version(document_id, user_id, version_id):
@@ -106,7 +102,7 @@ def compare_versions(document_id, owner_id, from_version_id, to_version_id):
         return None, "One or both versions were not found."
 
     chunks = diff_service.build_diff(from_version["content"], to_version["content"])
-    fallback_summary = diff_service.generate_stub_summary(chunks, False)
+    fallback_summary = diff_service.generate_stub_summary(chunks)
 
     return {
         "from": from_version,

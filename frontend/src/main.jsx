@@ -629,7 +629,7 @@ function Workspace({ token, user, onSignOut }) {
       };
       setAutoSaveState("saved");
       setCommitMessage("");
-      setNotice(saved.summary);
+      setNotice(`Version ${saved.version.versionNumber} saved.`);
       await loadVersions(selectedDocumentId);
     } catch (error) {
       setNotice(error.message);
@@ -1156,7 +1156,7 @@ function Workspace({ token, user, onSignOut }) {
                       </button>
                     </span>
                   </header>
-                  <p>{version.commitMessage || version.summary}</p>
+                  <p>{version.commitMessage || "No version note"}</p>
                 </article>
               ))
             ) : (
