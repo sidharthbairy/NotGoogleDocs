@@ -13,14 +13,13 @@ def create_app():
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", DEFAULT_SECRET_KEY)
     CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-    @app.before_request
-    def ensure_database():
-        init_db()
-
     app.teardown_appcontext(close_db)
     register_blueprints(app)
 
     socketio.init_app(app)
     register_collab_socket_handlers(socketio)
+
+    with app.app_context():
+        init_db()
 
     return app

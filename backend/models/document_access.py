@@ -8,7 +8,12 @@ DOCUMENT_SELECT = """
         d.current_content,
         d.created_at,
         d.updated_at,
-        COUNT(CASE WHEN v.user_id = %s THEN v.id END) AS version_count
+        COUNT(CASE WHEN v.user_id = %s THEN v.id END) AS version_count,
+        (
+            SELECT COUNT(*)
+            FROM document_collaborators c
+            WHERE c.document_id = d.id
+        ) AS collaborator_count
     FROM documents d
     LEFT JOIN document_versions v ON v.document_id = d.id
 """
