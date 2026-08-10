@@ -207,6 +207,83 @@ function App() {
   );
 }
 
+function RestoreVersionDialog({ version, documentTitle, onCancel, onConfirm, isRestoring}) {
+  if (!version) {
+    return null;
+  }
+
+  const preview = (version.content || "").trim();
+  const previewText = preview.length > 180 ? `${preview.slice(0, 180).trim()}...` : preview || "No content in this version.";
+
+  return (
+    <div
+      className="confirm-overlay"
+      role="presentation"
+      onClick={isRestoring ? undefined : onCancel}
+    >
+      <div
+        aria-labelledby="restore-dialog-title"
+        aria-modal="true"
+        className="confirm-dialog"
+        role="alertdialog"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <header className="confirm-dialog-header">
+          <RotateCcw size={20} aria-hidden="true" />
+          <h2 id="restore-dialog-title">Restore this version?</h2>
+        </header>
+        <div className="confirm-dialog-body">
+          <p className="confirm-dialog-lead">
+            You are about to restore <strong>Version {version.versionNumber}</strong> of{" "}
+            <strong>{documentTitle || "this document"}</strong>.
+          </p>
+          <ul className="confirm-dialog-list">
+            <li>Your current working draft will be replaced with this saved version.</li>
+          </ul>
+          <div className="confirm-dialog-preview">
+            <span className="confirm-dialog-preview-label">Version preview</span>
+            <p>{previewText}</p>
+            {version.commitMessage ? (
+              <small>Note: {version.commitMessage}</small>
+            ) : version.summary ? (
+              <small>{version.summary}</small>
+            ) : null}
+            <small>Saved {formatDate(version.createdAt)}</small>
+          </div>
+        </div>
+        <footer className="confirm-dialog-actions">
+          <button
+            className="secondary-action"
+            disabled={isRestoring}
+            onClick={onCancel}
+            type="button"
+          >
+            Cancel
+          </button>
+          <button
+            className="primary-action"
+            disabled={isRestoring}
+            onClick={onConfirm}
+            type="button"
+          >
+            {isRestoring ? (
+              <>
+                <RefreshCcw className="spinner" size={18} aria-hidden="true" />
+                Restoring…
+              </>
+            ) : (
+              <>
+                <RotateCcw size={18} aria-hidden="true" />
+                Restore version
+              </>
+            )}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
 function Workspace({ token, user, onSignOut }) {
   const [documents, setDocuments] = useState([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState(null);
@@ -236,6 +313,7 @@ function Workspace({ token, user, onSignOut }) {
   const collabSocketRef = useRef(null);
   const pendingCollabSubmitRef = useRef(null);
   const collabAckTimeoutRef = useRef(null);
+  const [restoreConfirmVersion, setRestoreConfirmVersion] = useState(null);
 
   const selectedDocument = documents.find((document) => document.id === selectedDocumentId);
   const canSaveVersion =
@@ -270,21 +348,6 @@ function Workspace({ token, user, onSignOut }) {
       window.removeEventListener("focus", handleFocus);
     };
   }, [token]);
-
-  useEffect(() => {
-    if (!selectedDocumentId) {
-      return;
-    }
-
-    setCollabEnabled(false);
-    setCollabRevision(0);
-    setCollabState("idle");
-    setShareEmail("");
-    setShareState("idle");
-    lastSyncedCollabRef.current = { id: null, content: "", revision: 0 };
-    loadDocument(selectedDocumentId);
-    loadVersions(selectedDocumentId);
-  }, [selectedDocumentId]);
 
   useEffect(() => {
     if (
@@ -542,9 +605,14 @@ function Workspace({ token, user, onSignOut }) {
         title: data.document.title,
         content: data.document.content,
       };
+      setDocuments((current) =>
+        current.map((document) => (document.id === documentId ? data.document : document)),
+      );
       setAutoSaveState("saved");
+      return data.document;
     } catch (error) {
       setNotice(error.message);
+      return null;
     }
   }
 
@@ -718,13 +786,55 @@ function Workspace({ token, user, onSignOut }) {
     }
   }
 
-  async function handleRestoreVersion(version) {
-    if (!selectedDocumentId) {
+  // async function handleRestoreVersion(version) {
+  //   if (!selectedDocumentId) {
+  //     return;
+  //   }
+
+  //   setStatus("saving");
+  //   setNotice("");
+  //   try {
+  //     const data = await api(`/api/documents/${selectedDocumentId}/restore`, {
+  //       method: "POST",
+  //       token,
+  //       body: {
+  //         versionId: version.id,
+  //       },
+  //     });
+  //     setDraftTitle(data.document.title);
+  //     setDraftContent(data.document.content);
+  //     setDocuments((current) =>
+  //       current.map((document) => (document.id === selectedDocumentId ? data.document : document)),
+  //     );
+  //     lastSavedDraftRef.current = {
+  //       id: selectedDocumentId,
+  //       title: data.document.title,
+  //       content: data.document.content,
+  //     };
+  //     setAutoSaveState("saved");
+  //     setDiff(null);
+  //     setIsCompareOpen(false);
+  //     setNotice(`Restored version ${data.restoredVersion.versionNumber}.`);
+  //   } catch (error) {
+  //     setNotice(error.message);
+  //   } finally {
+  //     setStatus("idle");
+  //   }
+  // }
+
+  function handleRequestRestoreVersion(version) {
+    setRestoreConfirmVersion(version);
+  }
+
+  async function handleConfirmRestoreVersion() {
+    const version = restoreConfirmVersion;
+    if (!selectedDocumentId || !version) {
       return;
     }
 
     setStatus("saving");
     setNotice("");
+
     try {
       const data = await api(`/api/documents/${selectedDocumentId}/restore`, {
         method: "POST",
@@ -746,6 +856,7 @@ function Workspace({ token, user, onSignOut }) {
       setAutoSaveState("saved");
       setDiff(null);
       setIsCompareOpen(false);
+      setRestoreConfirmVersion(null);
       setNotice(`Restored version ${data.restoredVersion.versionNumber}.`);
     } catch (error) {
       setNotice(error.message);
@@ -754,33 +865,29 @@ function Workspace({ token, user, onSignOut }) {
     }
   }
 
-  async function handleToggleCollaboration() {
-    if (!selectedDocumentId) {
-      return;
-    }
-
-    if (collabEnabled) {
-      setCollabEnabled(false);
-      setCollabState("idle");
-      setNotice("Collaboration mode paused.");
-      return;
+  async function enableSharingMode(options = {}) {
+    const { silent = false, documentId = selectedDocumentId } = options;
+    if (!documentId) {
+      return false;
     }
 
     setCollabState("syncing");
-    setNotice("");
+    if (!silent) {
+      setNotice("");
+    }
 
     try {
-      const state = await api(`/api/documents/${selectedDocumentId}/state`, { token });
+      const state = await api(`/api/documents/${documentId}/state`, { token });
 
       setDraftTitle(state.title);
       setDraftContent(state.content);
       lastSavedDraftRef.current = {
-        id: selectedDocumentId,
+        id: documentId,
         title: state.title,
         content: state.content,
       };
       lastSyncedCollabRef.current = {
-        id: selectedDocumentId,
+        id: documentId,
         content: state.content,
         revision: state.headRevision,
       };
@@ -788,11 +895,36 @@ function Workspace({ token, user, onSignOut }) {
       setAutoSaveState("saved");
       setCollabEnabled(true);
       setCollabState("live");
-      setNotice("Collaboration mode is live.");
+      if (!silent) {
+        setNotice("Sharing is on.");
+      }
+      return true;
     } catch (error) {
       setCollabState("error");
-      setNotice(error.message);
+      if (!silent) {
+        setNotice(error.message);
+      }
+      return false;
     }
+  }
+
+  function disableSharingMode() {
+    setCollabEnabled(false);
+    setCollabState("idle");
+    setNotice("Sharing is off.");
+  }
+
+  async function handleToggleCollaboration() {
+    if (!selectedDocumentId) {
+      return;
+    }
+
+    if (collabEnabled) {
+      disableSharingMode();
+      return;
+    }
+
+    await enableSharingMode();
   }
 
   async function handleShareDocument(event) {
@@ -814,12 +946,59 @@ function Workspace({ token, user, onSignOut }) {
       });
       setShareEmail("");
       setShareState("idle");
-      setNotice(`Shared with ${data.collaborator.email}.`);
+      setDocuments((current) =>
+        current.map((document) =>
+          document.id === selectedDocumentId
+            ? {
+                ...document,
+                isShared: true,
+                collaboratorCount: (document.collaboratorCount ?? 0) + 1,
+              }
+            : document,
+        ),
+      );
+      await enableSharingMode({ silent: true });
+      setNotice(`Shared with ${data.collaborator.email}. Sharing is on.`);
     } catch (error) {
       setShareState("error");
       setNotice(error.message);
     }
   }
+
+  useEffect(() => {
+    if (!selectedDocumentId) {
+      return;
+    }
+
+    setCollabEnabled(false);
+    setCollabRevision(0);
+    setCollabState("idle");
+    setShareEmail("");
+    setShareState("idle");
+    lastSyncedCollabRef.current = { id: null, content: "", revision: 0 };
+
+    let cancelled = false;
+
+    (async () => {
+      const document = await loadDocument(selectedDocumentId);
+      if (cancelled || !document) {
+        return;
+      }
+
+      await loadVersions(selectedDocumentId);
+      if (cancelled) {
+        return;
+      }
+
+      if (shouldAutoEnableSharing(document)) {
+        await enableSharingMode({ silent: true, documentId: selectedDocumentId });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDocumentId, token]);
 
   async function submitCollabDraftViaHttp(nextContent) {
     const lastSynced = lastSyncedCollabRef.current;
@@ -1019,7 +1198,11 @@ function Workspace({ token, user, onSignOut }) {
                   ) : null}
                   <button
                     className={collabEnabled ? "secondary-action collab-toggle active" : "secondary-action collab-toggle"}
-                    disabled={!selectedDocumentId || collabState === "syncing"}
+                    disabled={
+                      !selectedDocumentId ||
+                      collabState === "syncing" ||
+                      !selectedDocument.isOwner
+                    }
                     onClick={handleToggleCollaboration}
                     type="button"
                   >
@@ -1028,7 +1211,7 @@ function Workspace({ token, user, onSignOut }) {
                     ) : (
                       <Users size={18} aria-hidden="true" />
                     )}
-                    {collabEnabled ? "Live editing" : "Collaboration"}
+                    {collabEnabled ? "Sharing On" : "Sharing Off"}
                   </button>
                   <button
                     className="primary-action"
@@ -1063,10 +1246,10 @@ function Workspace({ token, user, onSignOut }) {
                 {notice ? <span className="notice">{notice}</span> : null}
               </div>
 
-              {collabEnabled ? (
+              {selectedDocument.isOwner ? (
                 <form className="share-row" onSubmit={handleShareDocument}>
                   <label>
-                    <span>Share for live editing</span>
+                    <span>Share document</span>
                     <input
                       aria-label="Collaborator email"
                       onChange={(event) => setShareEmail(event.target.value)}
@@ -1134,7 +1317,7 @@ function Workspace({ token, user, onSignOut }) {
                         aria-label={`Restore version ${version.versionNumber}`}
                         className="icon-action compact"
                         disabled={status === "saving" || deletingVersionId !== null}
-                        onClick={() => handleRestoreVersion(version)}
+                        onClick={() => handleRequestRestoreVersion(version)}
                         title={`Restore version ${version.versionNumber}`}
                         type="button"
                       >
@@ -1236,6 +1419,13 @@ function Workspace({ token, user, onSignOut }) {
           )}
         </section>
       ) : null}
+      <RestoreVersionDialog
+        documentTitle={selectedDocument?.title}
+        isRestoring={status === "saving" && restoreConfirmVersion !== null}
+        onCancel={() => setRestoreConfirmVersion(null)}
+        onConfirm={handleConfirmRestoreVersion}
+        version={restoreConfirmVersion}
+      />
     </main>
   );
 }
@@ -1274,6 +1464,16 @@ function formatDate(value) {
   }).format(new Date(value));
 }
 
+function shouldAutoEnableSharing(document) {
+  if (!document) {
+    return false;
+  }
+  if (document.isOwner === false) {
+    return true;
+  }
+  return Boolean(document.isShared);
+}
+
 function formatAutoSaveState(state) {
   if (state === "saving") {
     return "Saving draft...";
@@ -1300,7 +1500,7 @@ function formatCollabState(state) {
   if (state === "error") {
     return "Sync issue";
   }
-  return "Live";
+  return "Sharing on";
 }
 
 function getOrCreateClientId() {
