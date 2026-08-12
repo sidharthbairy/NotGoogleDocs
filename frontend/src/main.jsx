@@ -294,6 +294,7 @@ function Workspace({ token, user, onSignOut }) {
   const [fromVersionId, setFromVersionId] = useState("");
   const [toVersionId, setToVersionId] = useState("");
   const [diff, setDiff] = useState(null);
+  const [diffLoading, setDiffLoading] = useState(false);
   const [isCompareOpen, setIsCompareOpen] = useState(false);
   const [autoSaveState, setAutoSaveState] = useState("idle");
   const [collabEnabled, setCollabEnabled] = useState(false);
@@ -358,8 +359,12 @@ function Workspace({ token, user, onSignOut }) {
       fromVersionId === toVersionId
     ) {
       setDiff(null);
+      setDiffLoading(false);
       return;
     }
+
+    setDiffLoading(true);
+    setDiff(null);
 
     api(`/api/documents/${selectedDocumentId}/diff?from=${fromVersionId}&to=${toVersionId}`, {
       token,
@@ -368,6 +373,9 @@ function Workspace({ token, user, onSignOut }) {
       .catch((error) => {
         setDiff(null);
         setNotice(error.message);
+      })
+      .finally(() => {
+        setDiffLoading(false);
       });
   }, [fromVersionId, isCompareOpen, selectedDocumentId, toVersionId, token]);
 
@@ -1400,7 +1408,16 @@ function Workspace({ token, user, onSignOut }) {
             <FileDiff size={18} aria-hidden="true" />
             <h2>Split diff</h2>
           </div>
-          {diff ? (
+          {diffLoading ? (
+            <div className="compare-loading">
+              <div className="compare-loading-dots" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </div>
+              <p>Comparing versions...</p>
+            </div>
+          ) : diff ? (
             <>
               <p className="diff-summary">{diff.summary}</p>
               <div className="diff-grid">
